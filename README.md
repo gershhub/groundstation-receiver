@@ -8,3 +8,9 @@ The Receiver Station is part of a commission by the M+ museum in Hong Kong.
 
 #### Setup notes
 
+### Dependencies
+
+- [pypredict](https://github.com/nsat/pypredict): build from source on arch to avoid a urllib2 / python3 issue
+- [rtl-sdr](https://github.com/osmocom/rtl-sdr): install bleeding edge via rtl-sdr-git in the AUR
+- supervisord
+
