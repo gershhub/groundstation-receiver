@@ -6,9 +6,9 @@ The code is intended to be deployed on a Raspberry Pi 4 running Arch Linux ARM a
 
 Receiver Station draws on portions of [autowx](https://github.com/cyber-atomus/autowx), a similar project, and several others. On the recording side, the most significant functional difference between Receiver Station and autowx is the breaking up of the audio recording and decoded image into short chunks for a close-to-realtime online experience. Receiver Station also depends on Xerbo's aptdec instead of wxtoimg.
 
-#### Setup notes
+Before running, ensure that all dependencies are installed, and that Boto3 is properly configured for access to your AWS S3 bucket. A setup guide is available [here](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/quickstart.html#configuration). Configuration is set via groundstation.cfg, which is loaded by groundstation.py.
 
-
+Test scripts are available in the test directory, and do not all require installation of the dependencies.
 
 ### Dependencies
 
