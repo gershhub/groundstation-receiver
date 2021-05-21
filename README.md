@@ -8,9 +8,16 @@ The Receiver Station is part of a commission by the M+ museum in Hong Kong.
 
 #### Setup notes
 
+
+
 ### Dependencies
 
-- [pypredict](https://github.com/nsat/pypredict): build from source on arch to avoid a urllib2 / python3 issue
-- [rtl-sdr](https://github.com/osmocom/rtl-sdr): install bleeding edge via rtl-sdr-git in the AUR
-- supervisord
+- [predict](https://github.com/kd2bd/predict/): install from repo
+- [pypredict](https://github.com/nsat/pypredict): build from source to avoid a urllib2 / python3 issue
+- boto3: pip install boto3
+- sox: install from repo
+- twolame: install from repo
+- pysox: pip install pysox
+- configparser: pip install configparser
+- [aptdec](https://github.com/Xerbo/aptdec)
 
