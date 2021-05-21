@@ -10,7 +10,7 @@ Before running, ensure that all dependencies are installed, and that Boto3 is pr
 
 ### Testing
 
-Test scripts are available in the [test](test/) directory, and do not require installation of most of the dependencies below. See the separate README in [test](test/) for usage instructions.
+Test scripts are available in the [test directory](test/), and do not require installation of most of the dependencies below. See the separate README in [test](test/) for usage instructions.
 
 ### Dependencies
 
