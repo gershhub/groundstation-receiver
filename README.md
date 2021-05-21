@@ -8,6 +8,8 @@ Receiver Station draws on portions of [autowx](https://github.com/cyber-atomus/a
 
 Before running, ensure that all dependencies are installed, and that Boto3 is properly configured for access to your AWS S3 bucket. A setup guide is available [here](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/quickstart.html#configuration). Configuration is set via groundstation.cfg, which is loaded by groundstation.py.
 
+### Testing
+
 Test scripts are available in the test directory, and do not all require installation of the dependencies.
 
 ### Dependencies
