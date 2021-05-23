@@ -9,6 +9,10 @@ import os
 import sys
 import sox
 import boto3
+import subprocess
+
+# overrides predict and forces the next satellite pass 2 seconds from script execution
+testMode_recording = True
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -37,7 +41,7 @@ minElev = float(config.get('QTH', 'minElev'))
 # global AWS S3 object
 s3 = boto3.resource('s3')
 
-# a handy place to keep state about the satellites beingg recording
+# a handy place to keep state about the satellites being recording
 class WeatherSatellite:
     def __init__(self, satID, frequency):
         self.identifier = satID
@@ -52,13 +56,15 @@ class WeatherSatellite:
             transit = next(p)
         dt_ts = datetime.datetime.fromtimestamp(transit.start, tz=datetime.timezone.utc)
         self.nextPass = SatPass(dt_ts,  transit.duration(), transit.peak()['elevation'])
+        if testMode_recording:
+            self.nextPass = SatPass(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2),  transit.duration(), transit.peak()['elevation'])
         return self.nextPass
 
 class SatPass:
     def __init__(self, passTime, passDuration, passElevation):
         self.passTime = passTime
-        self.passDuration = passDuration
-        self.passElevation = passElevation
+        self.duration = passDuration
+        self.elevation = passElevation
         self.lastUpdated = datetime.datetime.now(datetime.timezone.utc)
         
 # update an array of weather sats from a TLE file
@@ -101,7 +107,7 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
         buildShipThread = threading.Thread(target=buildShip, args=(outfileName,))
         try:
             logging.info('Starting RF recording and demod (rtl_fm): chunk {}'.format(filecount))
-            child = subprocess.Popen(rtl_fm.append(outfilePath_raw))
+            child = subprocess.Popen(rtl_fm + [outfilePath_raw])
             time.sleep(chunkDuration)
             child.terminate()
             filecount = filecount + 1
@@ -123,8 +129,8 @@ def buildShip(filename):
 
     # sox transformer: raw to wav
     sox_raw2wav = sox.Transformer()
-    sox_raw2wav.set_input_format(file_type='wav',rate=config.get('SDR', 'samplerate'),bits=16,channels=1,encoding='signed-integer')
-    sox_raw2wav.set_output_format(file_type='wav',rate=config.get('SDR', 'wavrate'))
+    sox_raw2wav.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
+    sox_raw2wav.set_output_format(file_type='wav',rate=int(config.get('SDR', 'wavrate')))
     logging.info('Starting raw to wav resample (sox)')
     success = sox_raw2wav.build(in_raw, out_wav)
     if not success:
@@ -132,8 +138,8 @@ def buildShip(filename):
 
     # sox transformer: raw to mp3
     sox_raw2mp3 = sox.Transformer()
-    sox_raw2mp3.set_input_format(file_type='wav',rate=config.get('SDR', 'samplerate'),bits=16,channels=1,encoding='signed-integer')
-    sox_raw2mp3.set_output_format(file_type='mp3',rate=config.get('SDR', 'mp3rate'))
+    sox_raw2mp3.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
+    sox_raw2mp3.set_output_format(file_type='mp3',rate=int(config.get('SDR', 'mp3rate')))
     logging.info('Starting raw to mp3 resample/transcode (sox)')
     success = sox_raw2wav.build(in_raw, out_mp3)
     if not success:
@@ -176,12 +182,13 @@ if __name__ == "__main__":
         nextSat = satQueue[0]
         currentTime = datetime.datetime.now(datetime.timezone.utc)
         timeUntilPass = (satQueue[0].nextPass.passTime - currentTime).seconds
-        
-        if(timeUntilPass>0):
+        print(timeUntilPass)
+
+        if(timeUntilPass>10):
             logging.info('Waiting for {} at {} UTC'.format(nextSat.identifier, nextSat.nextPass.passTime))
             time.sleep(timeUntilPass)
         else:
-            logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, nextSat.nextPass.passDuration,nextSat. nextPass.elevation ))
+            logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
             recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 60)
            
-        time.sleep(10)
+        time.sleep(5)
