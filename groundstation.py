@@ -1,18 +1,12 @@
-import predict
-import datetime
-import operator
-import time
-import threading
-import logging
-import cfg
-import os
-import sys
+import os, sys, subprocess, threading, operator, time, logging
+from datetime import datetime, timezone, timedelta
 import sox
+import predict
 import boto3
-import subprocess
+import cfg
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
-testMode_recording = True
+testMode_recording = False
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -54,10 +48,10 @@ class WeatherSatellite:
         transit = next(p)
         while(transit.peak()['elevation'] < minElev):
             transit = next(p)
-        dt_ts = datetime.datetime.fromtimestamp(transit.start, tz=datetime.timezone.utc)
+        dt_ts = datetime.fromtimestamp(transit.start, tz=timezone.utc)
         self.nextPass = SatPass(dt_ts,  transit.duration(), transit.peak()['elevation'])
         if testMode_recording:
-            self.nextPass = SatPass(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2),  transit.duration(), transit.peak()['elevation'])
+            self.nextPass = SatPass(datetime.now(timezone.utc) + timedelta(seconds=2),  transit.duration(), transit.peak()['elevation'])
         return self.nextPass
 
 class SatPass:
@@ -65,7 +59,7 @@ class SatPass:
         self.passTime = passTime
         self.duration = passDuration
         self.elevation = passElevation
-        self.lastUpdated = datetime.datetime.now(datetime.timezone.utc)
+        self.lastUpdated = datetime.now(timezone.utc)
         
 # update an array of weather sats from a TLE file
 def updateTLE(satellites, tleFilePath):
@@ -96,7 +90,7 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
                '-s', config.get('SDR', 'samplerate'),   # sample rate of demodulated signal
                '-g', config.get('SDR', 'gain'),         # SDR RF gain
                '-F', '9',                               # enable downsample filter
-               '-E', 'deemp'                            # enable de-emphasis filter
+               '-E', 'deemp',                           # enable de-emphasis filter
                '-p', config.get('SDR', 'shift'),        # SDR ppm error
                '-T']                                    # enable bias tee
     timeLeft = totalDuration
@@ -104,7 +98,7 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
     while(timeLeft > 20):
         outfileName = 'signalchunk_{}'.format(filecount)
         outfilePath_raw = os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName))
-        buildShipThread = threading.Thread(target=buildShip, args=(outfileName,))
+        transcodeDecodeUploadThread = threading.Thread(target=transcodeDecodeUpload, args=(outfileName,))
         try:
             logging.info('Starting RF recording and demod (rtl_fm): chunk {}'.format(filecount))
             child = subprocess.Popen(rtl_fm + [outfilePath_raw])
@@ -113,7 +107,8 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
             filecount = filecount + 1
             timeLeft = timeLeft - chunkDuration
             logging.info('Starting transcode/decode/upload thread')
-            buildShipThread.start()
+            transcodeDecodeUploadThread.start()
+            time.sleep(2)
         except OSError as e:
             logging.warning('OS Error during command: ' + ' '.join(cmdline))
             logging.warning('OS Error: ' + e.strerror)
@@ -121,7 +116,7 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def buildShip(filename):
+def transcodeDecodeUpload(filename):
     in_raw = os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename))
     out_wav = os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename))
     out_mp3 = os.path.join(config.get('DIRS', 'mp3'), '{}.mp3'.format(filename))
@@ -129,7 +124,7 @@ def buildShip(filename):
 
     # sox transformer: raw to wav
     sox_raw2wav = sox.Transformer()
-    sox_raw2wav.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
+    sox_raw2wav.set_input_format(file_type='raw',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2wav.set_output_format(file_type='wav',rate=int(config.get('SDR', 'wavrate')))
     logging.info('Starting raw to wav resample (sox)')
     success = sox_raw2wav.build(in_raw, out_wav)
@@ -147,7 +142,7 @@ def buildShip(filename):
 
     # aptdec: decode APT from wav
     logging.info('Starting APT decode (aptdec)')
-    aptdec = ['./aptdec', out_wav, '-o', out_img]
+    aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     proc = subprocess.Popen(aptdec)
     proc.wait()
 
@@ -175,20 +170,25 @@ if __name__ == "__main__":
         satellites.append(WeatherSatellite(satID, frequency))
     
     updateTLE(satellites, tlePath)
+    tleLastUpdated = datetime.now(timezone.utc).day
 
     # loop until it's time to capture data
     while(True):
         satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth).passTime )
         nextSat = satQueue[0]
-        currentTime = datetime.datetime.now(datetime.timezone.utc)
-        timeUntilPass = (satQueue[0].nextPass.passTime - currentTime).seconds
-        print(timeUntilPass)
+        currentTime = datetime.now(timezone.utc)
+        timeUntilPass = satQueue[0].nextPass.passTime - currentTime
 
-        if(timeUntilPass>10):
-            logging.info('Waiting for {} at {} UTC'.format(nextSat.identifier, nextSat.nextPass.passTime))
-            time.sleep(timeUntilPass)
-        else:
-            logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
-            recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 60)
+        if(timeUntilPass.seconds>0):
+            logging.info('Waiting for {} in {} from now at {} UTC'.format(nextSat.identifier, timeUntilPass, nextSat.nextPass.passTime))
+            time.sleep(timeUntilPass.seconds)
+        
+        logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
+        recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 60)
            
-        time.sleep(5)
+        # pull TLEs from file once per day
+        if (tleLastUpdated != datetime.now(timezone.utc).day):
+            updateTLE(satellites, tlePath)
+            tleLastUpdated = datetime.now(timezone.utc).day
+
+        time.sleep(1)
