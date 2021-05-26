@@ -91,8 +91,8 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
                '-g', config.get('SDR', 'gain'),         # SDR RF gain
                '-F', '9',                               # enable downsample filter
                '-E', 'deemp',                           # enable de-emphasis filter
-               '-p', config.get('SDR', 'shift'),        # SDR ppm error
-               '-T']                                    # enable bias tee
+               '-p', config.get('SDR', 'shift')]        # SDR ppm error
+            #    '-T']                                    # enable bias tee
     timeLeft = totalDuration
     filecount = 0
     while(timeLeft > 20):
@@ -117,10 +117,11 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
 def transcodeDecodeUpload(filename):
-    in_raw = os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename))
-    out_wav = os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename))
-    out_mp3 = os.path.join(config.get('DIRS', 'mp3'), '{}.mp3'.format(filename))
-    out_img = os.path.join(config.get('DIRS', 'img'), '{}.png'.format(filename))
+    dataDir = config.get('DIRS', 'dataDir')
+    in_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename)))
+    out_wav = os.path.join(dataDir, os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename)))
+    out_mp3 = os.path.join(dataDir, os.path.join(config.get('DIRS', 'mp3'), '{}.mp3'.format(filename)))
+    out_img = os.path.join(dataDir, os.path.join(config.get('DIRS', 'img'), '{}.png'.format(filename)))
 
     # sox transformer: raw to wav
     sox_raw2wav = sox.Transformer()
@@ -155,11 +156,11 @@ def transcodeDecodeUpload(filename):
     s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
 
     # remove files from local 
-    logging.info('Removing local files')
-    os.remove(in_raw)
-    os.remove(out_wav)
-    os.remove(out_mp3)
-    os.remove(out_img)
+    # logging.info('Removing local files')
+    # os.remove(in_raw)
+    # os.remove(out_wav)
+    # os.remove(out_mp3)
+    # os.remove(out_img)
     
 
 if __name__ == "__main__":
@@ -179,12 +180,16 @@ if __name__ == "__main__":
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime
 
-        if(timeUntilPass.seconds>0):
+        print(timeUntilPass.total_seconds())
+
+        if(timeUntilPass.total_seconds()>0):
             logging.info('Waiting for {} in {} from now at {} UTC'.format(nextSat.identifier, timeUntilPass, nextSat.nextPass.passTime))
+            logging.info('Next: Waiting for {} in {} from now at {} UTC'.format(satQueue[1].identifier, satQueue[1].nextPass.passTime - currentTime, satQueue[1].nextPass.passTime))
+            logging.info('Next: Waiting for {} in {} from now at {} UTC'.format(satQueue[2].identifier, satQueue[2].nextPass.passTime - currentTime, satQueue[2].nextPass.passTime))
             time.sleep(timeUntilPass.seconds)
         
         logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
-        recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 60)
+        recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 90)
            
         # pull TLEs from file once per day
         if (tleLastUpdated != datetime.now(timezone.utc).day):
