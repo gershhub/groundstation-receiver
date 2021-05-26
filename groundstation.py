@@ -180,13 +180,11 @@ if __name__ == "__main__":
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime
 
-        print(timeUntilPass.total_seconds())
-
         if(timeUntilPass.total_seconds()>0):
             logging.info('Waiting for {} in {} from now at {} UTC'.format(nextSat.identifier, timeUntilPass, nextSat.nextPass.passTime))
             logging.info('Next: Waiting for {} in {} from now at {} UTC'.format(satQueue[1].identifier, satQueue[1].nextPass.passTime - currentTime, satQueue[1].nextPass.passTime))
             logging.info('Next: Waiting for {} in {} from now at {} UTC'.format(satQueue[2].identifier, satQueue[2].nextPass.passTime - currentTime, satQueue[2].nextPass.passTime))
-            time.sleep(timeUntilPass.seconds)
+            time.sleep(timeUntilPass.total_seconds())
         
         logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
         recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 90)
