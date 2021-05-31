@@ -97,7 +97,8 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
     filecount = 0
     while(timeLeft > 20):
         outfileName = 'signalchunk_{}'.format(filecount)
-        outfilePath_raw = os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName))
+        dataDir = config.get('DIRS', 'dataDir')
+        outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName)))
         transcodeDecodeUploadThread = threading.Thread(target=transcodeDecodeUpload, args=(outfileName,))
         try:
             logging.info('Starting RF recording and demod (rtl_fm): chunk {}'.format(filecount))
