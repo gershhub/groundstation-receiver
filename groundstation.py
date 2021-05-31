@@ -139,7 +139,7 @@ def transcodeDecodeUpload(filename, filecount):
     logging.info('Starting raw to wav with sox [chunk {}]'.format.filecount)
     success = sox_raw2wav.build(in_raw, out_wav)
     if not success:
-        logging.warning('Raw to wav resample failed! [chunk {}]'.format.filecount)
+        logging.warning('Raw to wav resample failed! [chunk {}]'.format(filecount))
 
     # sox transformer: raw to mp3
     sox_raw2mp3 = sox.Transformer()
@@ -183,7 +183,7 @@ if __name__ == "__main__":
     updateTLE(satellites, tlePath)
     tleLastUpdated = datetime.now(timezone.utc).day
 
-    # loop until it's time to capture data
+    # loop, sleeping until it's time to capture data
     while(True):
         satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth).passTime )
         nextSat = satQueue[0]
