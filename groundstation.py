@@ -93,31 +93,39 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
                '-E', 'deemp',                           # enable de-emphasis filter
                '-p', config.get('SDR', 'shift')]        # SDR ppm error
             #    '-T']                                    # enable bias tee
+    
+    startTime = datetime.now(timezone.utc)
     timeLeft = totalDuration
     filecount = 0
     while(timeLeft > 20):
         outfileName = 'signalchunk_{}'.format(filecount)
         dataDir = config.get('DIRS', 'dataDir')
         outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName)))
-        transcodeDecodeUploadThread = threading.Thread(target=transcodeDecodeUpload, args=(outfileName,))
+        transcodeDecodeUploadThread = threading.Thread(target=transcodeDecodeUpload, args=(outfileName, filecount,))
         try:
-            logging.info('Starting RF recording and demod (rtl_fm): chunk {}'.format(filecount))
+            logging.info('Starting rtl_fm recording [chunk {}]'.format(filecount))
             child = subprocess.Popen(rtl_fm + [outfilePath_raw])
             time.sleep(chunkDuration)
             child.terminate()
+            logging.info('Completed rtl_fm recording [chunk {}]'.format(filecount))
+            logging.info('Starting decode thread [chunk {}]'.format(filecount))
             filecount = filecount + 1
             timeLeft = timeLeft - chunkDuration
-            logging.info('Starting transcode/decode/upload thread')
             transcodeDecodeUploadThread.start()
             time.sleep(2)
         except OSError as e:
             logging.warning('OS Error during command: ' + ' '.join(cmdline))
             logging.warning('OS Error: ' + e.strerror)
+        
+        currentTime = datetime.now(timezone.utc)
+        if((currentTime - startTime).total_seconds() > totalDuration + 10):
+            # we've gone too long, time to quit this loop and return to the main loop
+            timeLeft = 0
 
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def transcodeDecodeUpload(filename):
+def transcodeDecodeUpload(filename, filecount):
     dataDir = config.get('DIRS', 'dataDir')
     in_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename)))
     out_wav = os.path.join(dataDir, os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename)))
@@ -128,33 +136,34 @@ def transcodeDecodeUpload(filename):
     sox_raw2wav = sox.Transformer()
     sox_raw2wav.set_input_format(file_type='raw',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2wav.set_output_format(file_type='wav',rate=int(config.get('SDR', 'wavrate')))
-    logging.info('Starting raw to wav resample (sox)')
+    logging.info('Starting raw to wav with sox [chunk {}]'.format.filecount)
     success = sox_raw2wav.build(in_raw, out_wav)
     if not success:
-        logging.warning("Raw to wav resample failed!")
+        logging.warning('Raw to wav resample failed! [chunk {}]'.format.filecount)
 
     # sox transformer: raw to mp3
     sox_raw2mp3 = sox.Transformer()
     sox_raw2mp3.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2mp3.set_output_format(file_type='mp3',rate=int(config.get('SDR', 'mp3rate')))
-    logging.info('Starting raw to mp3 resample/transcode (sox)')
+    logging.info('Starting sox raw to mp3 with sox [chunk {}]'.format.filecount)
     success = sox_raw2wav.build(in_raw, out_mp3)
     if not success:
-        logging.warning("Raw to mp3 resample/transcode failed!")
+        logging.warning('Raw to mp3 resample/transcode failed! [chunk {}]'.format.filecount)
 
     # aptdec: decode APT from wav
-    logging.info('Starting APT decode (aptdec)')
+    logging.info('Starting APT decode [chunk {}]'.format.filecount)
     aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     proc = subprocess.Popen(aptdec)
     proc.wait()
 
     # upload files to S3
-    logging.info('Starting image chunk upload')
+    logging.info('Starting S3 upload sequence [chunk {}]'.format.filecount)
     img = open(out_img, 'rb')
     s3.Bucket('ground-station-prototype-eb').put_object(Key='image/{}.png'.format(filename), Body=img)
-    logging.info('Starting audio chunk upload')
+    logging.info('Image upload completed [chunk {}]'.format.filecount)
     mp3 = open(out_mp3, 'rb')
     s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
+    logging.info('Audio upload completed [chunk {}]'.format.filecount)
 
     # remove files from local 
     # logging.info('Removing local files')
