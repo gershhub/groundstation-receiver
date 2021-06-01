@@ -34,9 +34,7 @@ minElev = float(config.get('QTH', 'minElev'))
 
 # global AWS S3 object
 s3 = boto3.resource('s3')
-sns = boto3.resource('sns', region_name='us-east-1')
-snsclient = boto3.client('sns', region_name='us-east-1')
-arn='arn:aws:sns:us-east-1:874684597203:groundstation-receiver'
+snsclient = boto3.client('sns', region_name=config.get('AWS','region_name'))
 
 # a handy place to keep state about the satellites being recording
 class WeatherSatellite:
@@ -222,7 +220,7 @@ def informSNS(satellite, minChunkDuration, maxChunkDuration, recCount):
 
     # send the recording plan to the cloud
     response = snsclient.publish(
-        TargetArn=arn,
+        TargetArn=config.get('AWS', 'sns_arn'),
         Message=json.dumps({'default': json.dumps(message)}),
         MessageStructure='json'
     )    
@@ -248,20 +246,18 @@ if __name__ == "__main__":
     # loop, sleeping until it's time to capture data
     while(True):
         satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth).passTime )
-        nextSat = satQueue[0]
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime
 
         if(timeUntilPass.total_seconds()>0):
-            logging.info('Waiting for {} in {} from now at {} UTC'.format(nextSat.identifier, timeUntilPass, nextSat.nextPass.passTime))
-            logging.info('Next: Waiting for {} in {} from now at {} UTC'.format(satQueue[1].identifier, satQueue[1].nextPass.passTime - currentTime, satQueue[1].nextPass.passTime))
-            logging.info('Next: Waiting for {} in {} from now at {} UTC'.format(satQueue[2].identifier, satQueue[2].nextPass.passTime - currentTime, satQueue[2].nextPass.passTime))
+            for sat in satQueue:
+                logging.info(' {} at {} UTC, max elev. {}°'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
         
-        logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
+        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {}°'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
 
-        informSNS(nextSat, minChunkDuration, maxChunkDuration, recCount)
-        recordChunksFM(nextSat, minChunkDuration, maxChunkDuration)
+        informSNS(satQueue[0], minChunkDuration, maxChunkDuration, recCount)
+        recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration)
 
         recCount = recCount + 1
            
