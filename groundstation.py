@@ -1,4 +1,4 @@
-import os, sys, subprocess, threading, operator, time, logging
+import os, sys, subprocess, threading, operator, time, logging, json, math, hashlib
 from datetime import datetime, timezone, timedelta
 import sox
 import predict
@@ -6,7 +6,7 @@ import boto3
 import cfg
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
-testMode_recording = False
+testMode_recording = True
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -34,6 +34,9 @@ minElev = float(config.get('QTH', 'minElev'))
 
 # global AWS S3 object
 s3 = boto3.resource('s3')
+sns = boto3.resource('sns', region_name='us-east-1')
+snsclient = boto3.client('sns', region_name='us-east-1')
+arn='arn:aws:sns:us-east-1:874684597203:groundstation-receiver'
 
 # a handy place to keep state about the satellites being recording
 class WeatherSatellite:
@@ -82,22 +85,36 @@ def updateTLE(satellites, tleFilePath):
 
 
 # record demodulated signals over a given duration, breaking the recordings into chunks 
-def recordChunksFM(frequency, totalDuration, chunkDuration):
+def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
+
     # options for rtl_fm, which captures and demodulates FM signals
     # rtl_fm is an external application included with rtl-sdr
     rtl_fm = ['/usr/bin/rtl_fm',
-               '-f', str(frequency),                    # center frequency
+               '-f', str(satellite.frequency),          # center frequency
                '-s', config.get('SDR', 'samplerate'),   # sample rate of demodulated signal
                '-g', config.get('SDR', 'gain'),         # SDR RF gain
                '-F', '9',                               # enable downsample filter
                '-E', 'deemp',                           # enable de-emphasis filter
-               '-p', config.get('SDR', 'shift')]        # SDR ppm error
-            #    '-T']                                    # enable bias tee
+               '-p', config.get('SDR', 'shift'),        # SDR ppm error
+               '-T']                                    # enable bias tee
     
-    startTime = datetime.now(timezone.utc)
-    timeLeft = totalDuration
-    filecount = 0
-    while(timeLeft > 20):
+    duration = math.floor(satellite.nextPass.duration)
+
+    # number of chunks in total duration of pass
+    num_chunks = duration / maxChunkDuration
+
+    # cut off the last bit if it is less than minChunkDuration
+    if(duration % maxChunkDuration >= minChunkDuration):
+        num_chunks = math.ceil(num_chunks)
+        logging.info('Beginning pass consisting of {}x {}s chunks and 1x {}s chunk'.format(num_chunks-1, maxChunkDuration, duration % maxChunkDuration))
+    else:
+        num_chunks = math.floor(num_chunks)
+        logging.info('Beginning pass consisting of {}x {}s chunks, skipping last {}s of pass (< minChunkDuration)'.format(num_chunks, maxChunkDuration, duration % maxChunkDuration))
+    
+    # the timing of the pass is not going to be very precise because of the apparent time required to release
+    # the radio device between recordings (2 second sleep), but that should be ok
+    timeLeft = duration
+    for filecount in range(num_chunks):
         outfileName = 'signalchunk_{}'.format(filecount)
         dataDir = config.get('DIRS', 'dataDir')
         outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName)))
@@ -105,22 +122,20 @@ def recordChunksFM(frequency, totalDuration, chunkDuration):
         try:
             logging.info('Starting rtl_fm recording [chunk {}]'.format(filecount))
             child = subprocess.Popen(rtl_fm + [outfilePath_raw])
+            if(timeLeft >= maxChunkDuration):
+                chunkDuration = maxChunkDuration
+            else:
+                chunkDuration = duration % maxChunkDuration
             time.sleep(chunkDuration)
             child.terminate()
             logging.info('Completed rtl_fm recording [chunk {}]'.format(filecount))
             logging.info('Starting decode thread [chunk {}]'.format(filecount))
-            filecount = filecount + 1
             timeLeft = timeLeft - chunkDuration
             transcodeDecodeUploadThread.start()
-            time.sleep(2)
+            time.sleep(2) # let's just ... ignore these 2 seconds ... 
         except OSError as e:
             logging.warning('OS Error during command: ' + ' '.join(cmdline))
             logging.warning('OS Error: ' + e.strerror)
-        
-        currentTime = datetime.now(timezone.utc)
-        if((currentTime - startTime).total_seconds() > totalDuration + 10):
-            # we've gone too long, time to quit this loop and return to the main loop
-            timeLeft = 0
 
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
@@ -136,7 +151,7 @@ def transcodeDecodeUpload(filename, filecount):
     sox_raw2wav = sox.Transformer()
     sox_raw2wav.set_input_format(file_type='raw',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2wav.set_output_format(file_type='wav',rate=int(config.get('SDR', 'wavrate')))
-    logging.info('Starting raw to wav with sox [chunk {}]'.format.filecount)
+    logging.info('Starting raw to wav with sox [chunk {}]'.format(filecount))
     success = sox_raw2wav.build(in_raw, out_wav)
     if not success:
         logging.warning('Raw to wav resample failed! [chunk {}]'.format(filecount))
@@ -145,25 +160,25 @@ def transcodeDecodeUpload(filename, filecount):
     sox_raw2mp3 = sox.Transformer()
     sox_raw2mp3.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2mp3.set_output_format(file_type='mp3',rate=int(config.get('SDR', 'mp3rate')))
-    logging.info('Starting sox raw to mp3 with sox [chunk {}]'.format.filecount)
+    logging.info('Starting sox raw to mp3 with sox [chunk {}]'.format(filecount))
     success = sox_raw2wav.build(in_raw, out_mp3)
     if not success:
-        logging.warning('Raw to mp3 resample/transcode failed! [chunk {}]'.format.filecount)
+        logging.warning('Raw to mp3 resample/transcode failed! [chunk {}]'.format(filecount))
 
     # aptdec: decode APT from wav
-    logging.info('Starting APT decode [chunk {}]'.format.filecount)
+    logging.info('Starting APT decode [chunk {}]'.format(filecount))
     aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     proc = subprocess.Popen(aptdec)
     proc.wait()
 
     # upload files to S3
-    logging.info('Starting S3 upload sequence [chunk {}]'.format.filecount)
+    logging.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
     img = open(out_img, 'rb')
     s3.Bucket('ground-station-prototype-eb').put_object(Key='image/{}.png'.format(filename), Body=img)
-    logging.info('Image upload completed [chunk {}]'.format.filecount)
+    logging.info('Image upload completed [chunk {}]'.format(filecount))
     mp3 = open(out_mp3, 'rb')
     s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
-    logging.info('Audio upload completed [chunk {}]'.format.filecount)
+    logging.info('Audio upload completed [chunk {}]'.format(filecount))
 
     # remove files from local 
     # logging.info('Removing local files')
@@ -171,7 +186,47 @@ def transcodeDecodeUpload(filename, filecount):
     # os.remove(out_wav)
     # os.remove(out_mp3)
     # os.remove(out_img)
+
+def informSNS(satellite, minChunkDuration, maxChunkDuration, recCount):
+
+    # zero padded number of recordings made since script start
+    performanceId = str('%08d' % recCount)
+
+    # number of chunks in total duration of pass
+    num_chunks = satellite.nextPass.duration / maxChunkDuration
+
+    # cut off the last bit if it is less than minChunkDuration
+    if(satellite.nextPass.duration % maxChunkDuration >= minChunkDuration):
+        num_chunks = math.ceil(num_chunks)
+        duration = math.floor(satellite.nextPass.duration)
+    else:
+        num_chunks = math.floor(num_chunks)
+        duration = math.floor(satellite.nextPass.duration - satellite.nextPass.duration % maxChunkDuration)
     
+    # predicted pass start time
+    startTimestamp = math.ceil(satellite.nextPass.passTime.timestamp())
+    
+    soundFiles = []
+    for i in range(num_chunks):
+        soundFiles.append({
+            'bucketName': 'ground-station-prototype-eb',
+            'objectPath': 'audio/signalchunk_{}'.format(i)
+        })
+    
+    message = {
+        "performanceId": performanceId,
+        "startTimestamp": startTimestamp,
+        "duration": duration,
+        "soundFiles": soundFiles
+    }
+
+    # send the recording plan to the cloud
+    response = snsclient.publish(
+        TargetArn=arn,
+        Message=json.dumps({'default': json.dumps(message)}),
+        MessageStructure='json'
+    )    
+
 
 if __name__ == "__main__":
     satIDs = config.getlist('SATELLITES', 'identifiers')
@@ -182,6 +237,13 @@ if __name__ == "__main__":
     
     updateTLE(satellites, tlePath)
     tleLastUpdated = datetime.now(timezone.utc).day
+    
+    # number of satellite recordings made since start (used for non-unique pass ID)
+    recCount = 0
+
+    # min and max chunk durations for recordings
+    minChunkDuration = 20
+    maxChunkDuration = 60
 
     # loop, sleeping until it's time to capture data
     while(True):
@@ -197,11 +259,15 @@ if __name__ == "__main__":
             time.sleep(timeUntilPass.total_seconds())
         
         logging.info('Beginning capture of {} at {}: duration {}, elevation {} degrees'.format(nextSat.identifier, currentTime, nextSat.nextPass.duration, nextSat. nextPass.elevation ))
-        recordChunksFM(nextSat.frequency, nextSat.nextPass.duration, 90)
+
+        informSNS(nextSat, minChunkDuration, maxChunkDuration, recCount)
+        recordChunksFM(nextSat, minChunkDuration, maxChunkDuration)
+
+        recCount = recCount + 1
            
         # pull TLEs from file once per day
         if (tleLastUpdated != datetime.now(timezone.utc).day):
             updateTLE(satellites, tlePath)
             tleLastUpdated = datetime.now(timezone.utc).day
 
-        time.sleep(1)
+        time.sleep(60)
