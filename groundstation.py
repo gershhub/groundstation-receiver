@@ -6,7 +6,7 @@ import boto3
 import cfg
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
-testMode_recording = True
+testMode_recording = False
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -245,7 +245,9 @@ if __name__ == "__main__":
 
     # loop, sleeping until it's time to capture data
     while(True):
-        satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth).passTime )
+        # sort satellites by next pass, computed redundantly but not demanding for 3 satellites
+        satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth).passTime)
+
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime
 
@@ -266,4 +268,5 @@ if __name__ == "__main__":
             updateTLE(satellites, tlePath)
             tleLastUpdated = datetime.now(timezone.utc).day
 
-        time.sleep(60)
+        # sleep for a couple minutes
+        time.sleep(120)
