@@ -229,8 +229,8 @@ def informSNS(satellite, minChunkDuration, maxChunkDuration, recCount):
         )
         message_id = response['MessageId']
         logger.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
-    except ClientError:
-        logger.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
+    except:
+        logger.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
         
 
 
