@@ -1,0 +1,6 @@
+[Unit]
+Description=Download and update TLE file for NOAA satellites
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/groundstation-receiver/updateTLE.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule TLE file download for NOAA satellites
+Requires=updateTLE.service
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1w
+
+[Install]
+WantedBy=timers.target

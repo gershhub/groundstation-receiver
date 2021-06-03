@@ -1,0 +1,14 @@
+[Unit]
+Description=GroundStation Receiver Service
+Wants=network.target
+After=network.target
+
+[Service]
+ExecStartPre=/bin/sleep 90
+ExecStart=/usr/bin/python3 /usr/local/lib/groundstation-receiver/groundstation-receiver.py 
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+Type=simple
+
+[Install]
+WantedBy=multi-user.target

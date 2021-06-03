@@ -1,4 +1,4 @@
-import os, sys, subprocess, threading, operator, time, logging, json, math, hashlib
+import os, sys, subprocess, threading, operator, time, logging, json, math
 from datetime import datetime, timezone, timedelta
 import sox
 import predict
@@ -234,7 +234,7 @@ if __name__ == "__main__":
     satellites = []
     for satID, frequency in zip(satIDs, frequencies):
         satellites.append(WeatherSatellite(satID, frequency))
-    
+
     updateTLE(satellites, tlePath)
     tleLastUpdated = datetime.now(timezone.utc).day
     
