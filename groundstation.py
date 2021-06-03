@@ -35,6 +35,8 @@ minElev = float(config.get('QTH', 'minElev'))
 # global AWS S3 object
 s3 = boto3.resource('s3')
 snsclient = boto3.client('sns', region_name=config.get('AWS','region_name'))
+sqsclient = boto3.client('sqs', region_name=config.get('AWS','region_name'))
+
 
 # a handy place to keep state about the satellites being recording
 class WeatherSatellite:
