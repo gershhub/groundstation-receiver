@@ -1,31 +1,22 @@
 import os, sys, subprocess, threading, operator, time, logging, json, math
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
-from systemd.journal import JournalHandler
 import sox
 import predict
 import boto3
 import cfg
 
-logger = logging.getLogger(__name__)
-# hook into systemd
-journal_handler = JournalHandler()
-journal_handler.setFormatter(logging.Formatter(
-    '[%(levelname)s] %(message)s'
-))
-logger.addHandler(journal_handler)
-logger.setLevel(logging.INFO)
-
-
 # overrides predict and forces the next satellite pass 2 seconds from script execution
 testMode_recording = False
+
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
 # groundstation configuration 
 configFile = 'groundstation.cfg'
 
 # if no config file is given, use the one above
 if len(sys.argv) > 2:
-    logger.warning("Usage: {} [groundstation.cfg]".format(sys.argv[0]))
+    logging.warning("Usage: {} [groundstation.cfg]".format(sys.argv[0]))
     exit(-1)
 elif len(sys.argv) == 2:
     configFile = sys.argv[1]
@@ -77,7 +68,7 @@ class SatPass:
 # update an array of weather sats from a TLE file
 def updateTLE(satellites, tleFilePath):
     try:
-        logger.info('Ingesting TLEs from {}'.format(tleFilePath))
+        logging.info('Ingesting TLEs from {}'.format(tleFilePath))
         tleFile=open(tleFilePath)
         tleData=tleFile.readlines()
         tleFile.close()
@@ -89,8 +80,8 @@ def updateTLE(satellites, tleFilePath):
                         tle.append(l.strip('\r\n').rstrip())
             sat.TLE = tle
     except OSError as e:
-        logger.warning('OS Error during command: ' + ' '.join(cmdline))
-        logger.warning('OS Error: ' + e.strerror)
+        logging.warning('OS Error during command: ' + ' '.join(cmdline))
+        logging.warning('OS Error: ' + e.strerror)
 
 
 
@@ -116,10 +107,10 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
     # cut off the last bit if it is less than minChunkDuration
     if(duration % maxChunkDuration >= minChunkDuration):
         num_chunks = math.ceil(num_chunks)
-        logger.info('Beginning pass consisting of {}x {}s chunks and 1x {}s chunk'.format(num_chunks-1, maxChunkDuration, duration % maxChunkDuration))
+        logging.info('Beginning pass consisting of {}x {}s chunks and 1x {}s chunk'.format(num_chunks-1, maxChunkDuration, duration % maxChunkDuration))
     else:
         num_chunks = math.floor(num_chunks)
-        logger.info('Beginning pass consisting of {}x {}s chunks, skipping last {}s of pass (< minChunkDuration)'.format(num_chunks, maxChunkDuration, duration % maxChunkDuration))
+        logging.info('Beginning pass consisting of {}x {}s chunks, skipping last {}s of pass (< minChunkDuration)'.format(num_chunks, maxChunkDuration, duration % maxChunkDuration))
     
     # the timing of the pass is not going to be very precise because of the apparent time required to release
     # the radio device between recordings (2 second sleep), but that should be ok
@@ -144,7 +135,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
         )
 
         try:
-            logger.info('Starting rtl_fm recording [chunk {}]'.format(filecount))
+            logging.info('Starting rtl_fm recording [chunk {}]'.format(filecount))
             child = subprocess.Popen(rtl_fm + [outfilePath_raw])
             if(timeLeft >= maxChunkDuration):
                 chunkDuration = maxChunkDuration
@@ -152,14 +143,14 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
                 chunkDuration = duration % maxChunkDuration
             time.sleep(chunkDuration)
             child.terminate()
-            logger.info('Completed rtl_fm recording [chunk {}]'.format(filecount))
-            logger.info('Starting decode thread [chunk {}]'.format(filecount))
+            logging.info('Completed rtl_fm recording [chunk {}]'.format(filecount))
+            logging.info('Starting decode thread [chunk {}]'.format(filecount))
             timeLeft = timeLeft - chunkDuration
             transcodeDecodeUploadThread.start()
             time.sleep(2) # let's just ... ignore these 2 seconds ... 
         except OSError as e:
-            logger.warning('OS Error during command: ' + ' '.join(cmdline))
-            logger.warning('OS Error: ' + e.strerror)
+            logging.warning('OS Error during command: ' + ' '.join(cmdline))
+            logging.warning('OS Error: ' + e.strerror)
 
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
@@ -175,41 +166,41 @@ def transcodeDecodeUpload(filename, filecount, passInfo = None):
     sox_raw2wav = sox.Transformer()
     sox_raw2wav.set_input_format(file_type='raw',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2wav.set_output_format(file_type='wav',rate=int(config.get('SDR', 'wavrate')))
-    logger.info('Starting raw to wav with sox [chunk {}]'.format(filecount))
+    logging.info('Starting raw to wav with sox [chunk {}]'.format(filecount))
     success = sox_raw2wav.build(in_raw, out_wav)
     if not success:
-        logger.warning('Raw to wav resample failed! [chunk {}]'.format(filecount))
+        logging.warning('Raw to wav resample failed! [chunk {}]'.format(filecount))
 
     # sox transformer: raw to mp3
     sox_raw2mp3 = sox.Transformer()
     sox_raw2mp3.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2mp3.set_output_format(file_type='mp3',rate=int(config.get('SDR', 'mp3rate')))
-    logger.info('Starting sox raw to mp3 with sox [chunk {}]'.format(filecount))
+    logging.info('Starting sox raw to mp3 with sox [chunk {}]'.format(filecount))
     success = sox_raw2wav.build(in_raw, out_mp3)
     if not success:
-        logger.warning('Raw to mp3 resample/transcode failed! [chunk {}]'.format(filecount))
+        logging.warning('Raw to mp3 resample/transcode failed! [chunk {}]'.format(filecount))
 
     # aptdec: decode APT from wav
-    logger.info('Starting APT decode [chunk {}]'.format(filecount))
+    logging.info('Starting APT decode [chunk {}]'.format(filecount))
     aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     proc = subprocess.Popen(aptdec)
     proc.wait()
 
     # upload files to S3
-    logger.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
+    logging.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
     img = open(out_img, 'rb')
     s3.Bucket('ground-station-prototype-eb').put_object(Key='image/{}.png'.format(filename), Body=img)
-    logger.info('Image upload completed [chunk {}]'.format(filecount))
+    logging.info('Image upload completed [chunk {}]'.format(filecount))
     mp3 = open(out_mp3, 'rb')
     s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
-    logger.info('Audio upload completed [chunk {}]'.format(filecount))
+    logging.info('Audio upload completed [chunk {}]'.format(filecount))
 
     # on second chunk upload completed, inform the app server to begin performance
     if(passInfo is not None):
         informSQS(passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
 
     # remove files from local 
-    # logger.info('Removing local files')
+    # logging.info('Removing local files')
     # os.remove(in_raw)
     # os.remove(out_wav)
     # os.remove(out_mp3)
@@ -248,7 +239,7 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
         "soundFiles": soundFiles
     }
     
-    logger.info('Sending SQS message: {}'.format(str(message)))
+    logging.info('Sending SQS message: {}'.format(str(message)))
 
     queue_url = config.get('AWS', 'sqs_url')
     response = sqsclient.send_message(
@@ -267,9 +258,9 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
     #         MessageStructure='json'
     #     )
     #     message_id = response['MessageId']
-    #     logger.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
+    #     logging.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
     # except:
-    #     logger.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
+    #     logging.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
         
 
 
@@ -297,10 +288,10 @@ if __name__ == "__main__":
 
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
-                logger.info(' {} at {} UTC, max elev. {}°'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
+                logging.info(' {} at {} UTC, max elev. {}°'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
         
-        logger.info('Beginning capture of {} at {}: duration {}, max_elev. {}°'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
+        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {}°'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
 
         recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration)
            
