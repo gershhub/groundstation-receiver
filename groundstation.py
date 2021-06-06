@@ -1,5 +1,6 @@
 import os, sys, subprocess, threading, operator, time, logging, json, math
 from datetime import datetime, timezone, timedelta
+from uuid import uuid4
 import sox
 import predict
 import boto3
@@ -118,7 +119,21 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
         outfileName = 'signalchunk_{}'.format(filecount)
         dataDir = config.get('DIRS', 'dataDir')
         outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName)))
-        transcodeDecodeUploadThread = threading.Thread(target=transcodeDecodeUpload, args=(outfileName, filecount,))
+
+        # resample, APT decode, trancode, and upload are handled after rtl_fm, in a separate thread
+        # after second chunk upload, inform the app server to begin performance (set passInfo)
+        passInfo = None
+        if(filecount == 1):
+            passInfo = {
+                'satellite' : satellite,
+                'minChunkDuration' : minChunkDuration,
+                'maxChunkDuration' : maxChunkDuration
+            }
+        transcodeDecodeUploadThread = threading.Thread(
+            target = transcodeDecodeUpload, 
+            args = ( outfileName, filecount, passInfo, )
+        )
+
         try:
             logging.info('Starting rtl_fm recording [chunk {}]'.format(filecount))
             child = subprocess.Popen(rtl_fm + [outfilePath_raw])
@@ -140,7 +155,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def transcodeDecodeUpload(filename, filecount):
+def transcodeDecodeUpload(filename, filecount, passInfo = None):
     dataDir = config.get('DIRS', 'dataDir')
     in_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename)))
     out_wav = os.path.join(dataDir, os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename)))
@@ -180,6 +195,10 @@ def transcodeDecodeUpload(filename, filecount):
     s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
     logging.info('Audio upload completed [chunk {}]'.format(filecount))
 
+    # on second chunk upload completed, inform the app server to begin performance
+    if(passInfo is not None):
+        informSQS(passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
+
     # remove files from local 
     # logging.info('Removing local files')
     # os.remove(in_raw)
@@ -187,10 +206,10 @@ def transcodeDecodeUpload(filename, filecount):
     # os.remove(out_mp3)
     # os.remove(out_img)
 
-def informSNS(satellite, minChunkDuration, maxChunkDuration, recCount):
+def informSQS(satellite, minChunkDuration, maxChunkDuration):
 
     # zero padded number of recordings made since script start
-    performanceId = str('%08d' % recCount)
+    performanceId = str(uuid4())
 
     # number of chunks in total duration of pass
     num_chunks = satellite.nextPass.duration / maxChunkDuration
@@ -219,18 +238,29 @@ def informSNS(satellite, minChunkDuration, maxChunkDuration, recCount):
         "duration": duration,
         "soundFiles": soundFiles
     }
+    
+    logging.info('Sending SQS message: {}'.format(str(message)))
 
-    try:
-        # send the recording plan to the cloud
-        response = snsclient.publish(
-            TargetArn=config.get('AWS', 'sns_arn'),
-            Message=json.dumps({'default': json.dumps(message)}),
-            MessageStructure='json'
-        )
-        message_id = response['MessageId']
-        logging.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
-    except:
-        logging.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
+    queue_url = config.get('AWS', 'sqs_url')
+    response = sqsclient.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps({'default': json.dumps(message)}),
+        MessageGroupId='groundstation-receiver',
+        MessageDeduplicationId=performanceId
+    )
+    return(response)
+
+    # try:
+    #     # send the recording plan to the cloud (SNS)
+    #     response = snsclient.publish(
+    #         TargetArn=config.get('AWS', 'sns_arn'),
+    #         Message=json.dumps({'default': json.dumps(message)}),
+    #         MessageStructure='json'
+    #     )
+    #     message_id = response['MessageId']
+    #     logging.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
+    # except:
+    #     logging.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
         
 
 
@@ -243,9 +273,6 @@ if __name__ == "__main__":
 
     updateTLE(satellites, tlePath)
     tleLastUpdated = datetime.now(timezone.utc).day
-    
-    # number of satellite recordings made since start (used for non-unique pass ID)
-    recCount = 0
 
     # min and max chunk durations for recordings
     minChunkDuration = 20
@@ -266,10 +293,7 @@ if __name__ == "__main__":
         
         logging.info('Beginning capture of {} at {}: duration {}, max_elev. {}°'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
 
-        informSNS(satQueue[0], minChunkDuration, maxChunkDuration, recCount)
         recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration)
-
-        recCount = recCount + 1
            
         # pull TLEs from file once per day
         if (tleLastUpdated != datetime.now(timezone.utc).day):
