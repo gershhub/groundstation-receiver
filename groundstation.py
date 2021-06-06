@@ -288,10 +288,10 @@ if __name__ == "__main__":
 
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
-                logging.info(' {} at {} UTC, max elev. {}°'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
+                logging.info(' {} at {} UTC, max elev. {} degrees'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
         
-        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {}°'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
+        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {} degrees'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
 
         recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration)
            
