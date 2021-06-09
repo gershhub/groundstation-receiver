@@ -6,6 +6,7 @@ import predict
 import boto3
 import cfg
 
+
 # overrides predict and forces the next satellite pass 2 seconds from script execution
 testMode_recording = False
 
@@ -35,7 +36,7 @@ minElev = float(config.get('QTH', 'minElev'))
 
 # global AWS S3 object
 s3 = boto3.resource('s3')
-snsclient = boto3.client('sns', region_name=config.get('AWS','region_name'))
+# snsclient = boto3.client('sns', region_name=config.get('AWS','region_name'))
 sqsclient = boto3.client('sqs', region_name=config.get('AWS','region_name'))
 
 
@@ -261,7 +262,13 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
     #     logging.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
     # except:
     #     logging.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
-        
+
+# given a process name, if it is found running, kill it
+def tryKill(processname):
+    proc = subprocess.Popen(["pgrep", processname], stdout=subprocess.PIPE) 
+    if(list(proc.stdout)):
+        os.system('killall -9 {}'.format(processname))
+        logging.info('Errant {} process discovered and killed!'.format(processname))
 
 
 if __name__ == "__main__":
@@ -291,10 +298,20 @@ if __name__ == "__main__":
                 logging.info(' {} at {} UTC, max elev. {} degrees'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
         
-        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {} degrees'.format(satQueue[0].identifier, currentTime, satQueue[0].nextPass.duration, satQueue[0].nextPass.elevation ))
+        # just in case rtl_fm is still running, if python was shut down uncleanly
+        tryKill('rtl_fm')
 
+        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {} degrees'.format(
+            satQueue[0].identifier, 
+            currentTime, 
+            satQueue[0].nextPass.duration, 
+            satQueue[0].nextPass.elevation 
+        ))
         recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration)
-           
+        
+        # just in case rtl_fm is still running, if python was shut down uncleanly
+        tryKill('rtl_fm')
+
         # pull TLEs from file once per day
         if (tleLastUpdated != datetime.now(timezone.utc).day):
             updateTLE(satellites, tlePath)
