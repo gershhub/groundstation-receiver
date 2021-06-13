@@ -122,17 +122,17 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
         outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName)))
 
         # resample, APT decode, trancode, and upload are handled after rtl_fm, in a separate thread
-        # after second chunk upload, inform the app server to begin performance (set passInfo)
-        passInfo = None
-        if(filecount == 1):
-            passInfo = {
+        # after second chunk upload, inform the app server to begin performance
+        passInfo = {
                 'satellite' : satellite,
                 'minChunkDuration' : minChunkDuration,
                 'maxChunkDuration' : maxChunkDuration
             }
+        if(filecount == 1): inform = True
+        else: inform = False
         transcodeDecodeUploadThread = threading.Thread(
             target = transcodeDecodeUpload, 
-            args = ( outfileName, filecount, passInfo, )
+            args = ( outfileName, filecount, passInfo, inform)
         )
 
         try:
@@ -156,7 +156,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def transcodeDecodeUpload(filename, filecount, passInfo = None):
+def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
     dataDir = config.get('DIRS', 'dataDir')
     in_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename)))
     out_wav = os.path.join(dataDir, os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename)))
@@ -183,7 +183,9 @@ def transcodeDecodeUpload(filename, filecount, passInfo = None):
 
     # aptdec: decode APT from wav
     logging.info('Starting APT decode [chunk {}]'.format(filecount))
-    aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
+    # aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
+    satid = passInfo['satellite'].identifier.lower().replace(' ', '_')
+    aptdec = ['noaa-apt', out_wav, '-o', os.path.relpath(out_img), '-T', tlePath, '-s', satid]
     proc = subprocess.Popen(aptdec)
     proc.wait()
 
@@ -197,7 +199,7 @@ def transcodeDecodeUpload(filename, filecount, passInfo = None):
     logging.info('Audio upload completed [chunk {}]'.format(filecount))
 
     # on second chunk upload completed, inform the app server to begin performance
-    if(passInfo is not None):
+    if(inform):
         informSQS(passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
 
     # remove files from local 
