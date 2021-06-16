@@ -185,7 +185,8 @@ def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
     logging.info('Starting APT decode [chunk {}]'.format(filecount))
     # aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     satid = passInfo['satellite'].identifier.lower().replace(' ', '_')
-    aptdec = ['noaa-apt', out_wav, '-o', os.path.relpath(out_img), '-T', tlePath, '-s', satid]
+    aptdec = ['noaa-apt', out_wav, '-o', os.path.relpath(out_img), '-T', tlePath, '-s', satid, '-c', 'histogram']
+    
     proc = subprocess.Popen(aptdec)
     proc.wait()
 
@@ -228,18 +229,24 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
     # predicted pass start time
     startTimestamp = math.ceil(satellite.nextPass.passTime.timestamp())
     
-    soundFiles = []
+    segments = []
     for i in range(num_chunks):
-        soundFiles.append({
-            'bucketName': 'ground-station-prototype-eb',
-            'objectPath': 'audio/signalchunk_{}'.format(i)
+        segments.append({
+            'soundFile' : {
+                'bucketName': 'ground-station-prod',
+                'objectPath': 'audio/signalchunk_{}.mp3'.format(i)
+            },
+            'imageFile' : {
+                'bucketName': 'ground-station-prod',
+                'objectPath': 'image/signalchunk_{}.png'.format(i)
+            }
         })
     
     message = {
         "performanceId": performanceId,
         "startTimestamp": startTimestamp,
         "duration": duration,
-        "soundFiles": soundFiles
+        "segments": soundFiles
     }
     
     logging.info('Sending SQS message: {}'.format(str(message)))
