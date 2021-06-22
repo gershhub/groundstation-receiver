@@ -28,7 +28,7 @@ Example systemd service files are available for both updateTLE.sh and groundstat
 
 ### Testing and debugging
 
-[ngrok](https://ngrok.com/) is a great tool for tunneling to an embedded computer in case of fixes needed or to review data. In addition to uploading the recordings to AWS, we expose them via local webserver and use ngrok to make them securely available at a remote destination when necessary. This feature can be turned on locally via the supervisord web interface at localhost:9001.
+[ngrok](https://ngrok.com/) is a great tool for tunneling to an embedded computer in case of fixes needed or to review data. In addition to uploading the recordings to AWS, we expose them via local webserver and use ngrok to make them securely available to the internet when necessary. This feature can be turned on locally via the supervisord web interface at localhost:9001, and defaults off.
 
 A few test scripts are available in the [test directory](test/), and do not require installation of most of the dependencies below. See the separate README in [test](test/) for usage instructions.
 
