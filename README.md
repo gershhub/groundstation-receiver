@@ -6,9 +6,9 @@ The code is intended to be deployed on a Raspberry Pi 4 running Arch Linux ARM a
 
 Receiver Station draws on portions of [autowx](https://github.com/cyber-atomus/autowx) for inspiration. On the recording side, the most significant functional difference between Receiver Station and autowx is the breaking up of the audio recording and decoded image into short chunks for a close-to-realtime online experience. Receiver Station also depends on noaa-apt instead of wxtoimg.
 
-Before running, ensure that all dependencies are installed, and that Boto3 is properly configured for access to your personal S3 and SQS, if using AWS. A setup guide is available [here](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/quickstart.html#configuration). Configuration is set via groundstation.cfg, which is loaded by groundstation.py.
+Before running, ensure that all dependencies are installed, and that Boto3 is properly configured for access to your personal S3 and SQS, if using AWS. A setup guide is available [here](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/quickstart.html#configuration). Configuration is set via [groundstation.cfg](groundstation.cfg), which is loaded by [groundstation.py](groundstation.py).
 
-Updated TLEs can be retrieved using a [shell script](updateTLE.sh) or inline in groundstation.py. Due to firewall limitations in our final installation, we mirror the TLEs on our AWS instance and retrieve from there. groundstation.py also attempts to retrieve and set local time from the AWS / application server instance, as public ntp was not available in our installation setting.
+Updated TLEs can be retrieved using a [shell script](updateTLE.sh) or inline in [groundstation.py](groundstation.py). Due to firewall limitations in our final installation, we mirror the TLEs on our AWS instance and retrieve from there. [groundstation.py](groundstation.py) also attempts to retrieve and set local time from the AWS / application server instance, as public ntp was not available in our installation setting.
 
 ### Dependencies
 
