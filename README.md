@@ -13,14 +13,15 @@ Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation
 ### Dependencies
 
 - python3
-- [predict](https://github.com/kd2bd/predict/): install from distribution repo
+- [predict](https://github.com/kd2bd/predict/): install from repositories
 - [pypredict](https://github.com/nsat/pypredict): build from source to avoid a urllib2 / python3 issue
-- sox: install from distribution repo
+- sox: install from repositories
 - pysox: pip install sox
-- twolame: install from distribution repo
+- twolame: install from repositories
 - boto3: pip install boto3 (pip)
 - configparser: pip install configparser
 - [noaa-apt](https://github.com/martinber/noaa-apt): releases are available for various platforms or build from source. only the command line version is needed.
+- [Supervisord](http://supervisord.org/) (optional): install from repositories
 
 ### Running as a service
 
