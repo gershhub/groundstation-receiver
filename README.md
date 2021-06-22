@@ -10,6 +10,18 @@ Before running, ensure that all dependencies are installed, and that Boto3 is pr
 
 Updated TLEs can be retrieved using a [shell script](updateTLE.sh) or inline in groundstation.py. Due to firewall limitations in our final installation, we mirror the TLEs on our AWS instance and retrieve from there. groundstation.py also attempts to retrieve and set local time from the AWS / application server instance, as public ntp was not available in our installation setting.
 
+### Dependencies
+
+- python3
+- [predict](https://github.com/kd2bd/predict/): install from distribution repo
+- [pypredict](https://github.com/nsat/pypredict): build from source to avoid a urllib2 / python3 issue
+- sox: install from distribution repo
+- pysox: pip install sox
+- twolame: install from distribution repo
+- boto3: pip install boto3 (pip)
+- configparser: pip install configparser
+- [noaa-apt](https://github.com/martinber/noaa-apt): releases are available for various platforms or build from source. only the command line version is needed.
+
 ### Running as a service
 
 Example systemd service files are available for both updateTLE.sh and groundstation.py. Supervisord configuration is also provided. For convenient process control and debugging, we use supervisord in place of systemd so as to allow local support at the installation site to review program logs through supervisord's simple web interface on localhost:9001. 
@@ -38,16 +50,4 @@ A few test scripts are available in the [test directory](test/), and do not requ
 - M2.5 and M3 hardware (stand-offs and screws)
 - Silica gel packets
 - [Self-amalgamating tape](https://www.amazon.fr/gp/product/B00WSLTVFY/)
-
-### Dependencies
-
-- python3
-- [predict](https://github.com/kd2bd/predict/): install from distribution repo
-- [pypredict](https://github.com/nsat/pypredict): build from source to avoid a urllib2 / python3 issue
-- sox: install from distribution repo
-- pysox: pip install sox
-- twolame: install from distribution repo
-- boto3: pip install boto3 (pip)
-- configparser: pip install configparser
-- [noaa-apt](https://github.com/martinber/noaa-apt): releases are available for various platforms or build from source. only the command line version is needed.
 
