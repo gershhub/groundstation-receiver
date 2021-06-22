@@ -24,7 +24,7 @@ A few test scripts are available in the [test directory](test/), and do not requ
 
 - [Nooelec NESDR SMArTee v2 SDR](https://www.nooelec.com/store/nesdr-smartee-sdr.html): any RTL-SDR compatible device with bias tee will work
 - [Nooelec SAWbird+ NOAA](https://www.nooelec.com/store/sdr/sdr-addons/sawbird/sawbird-plus-noaa-308.html): 137MHz SAW Filter and LNA, not required but improves signal
-- [Diamond KE-137 QFH Antenna](https://www.wimo.com/en/ke-137): RHCP antenna for reception of NOAA weather satellites on 137MHz (or [build one!](https://www.instructables.com/NOAA-Satellite-Signals-with-a-PVC-QFH-Antenna-and-/))
+- [Diamond KE-137 QFH Antenna](https://www.wimo.com/en/ke-137): RHCP antenna for 137MHz (or [build one :)](https://www.instructables.com/NOAA-Satellite-Signals-with-a-PVC-QFH-Antenna-and-/))
 - [Raspberry Pi 4 Model B](https://www.raspberrypi.org/products/raspberry-pi-4-model-b/) or equivalent
 - [Nebra IP67 Waterproof/Weatherproof Enclosure](https://uk.pi-supply.com/products/die-cast-outdoor-weatherproof-enclosure), option with pre-installed PoE cable gland
 - [HAT Mounting Raspberry Pi Expansion Board](https://uk.pi-supply.com/products/nebra-ip67-case-gateway-hat-mounting-and-expansion-board)
