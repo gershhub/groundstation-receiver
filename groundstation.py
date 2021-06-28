@@ -1,10 +1,8 @@
-import os, sys, subprocess, threading, operator, time, logging, json, math
+import os, sys, subprocess, threading, time, math
+import operator, json, logging
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
-import sox
-import predict
-import boto3
-import cfg
+import sox, predict, boto3, cfg, requests
 
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
@@ -26,7 +24,7 @@ elif len(sys.argv) == 2:
 config = cfg.get(configFile)
 
 # TLE file should be updated on a regular basis by a separate process
-tlePath = os.path.join(config.get('DIRS', 'tleDir'), config.get('DIRS', 'tleFile'))
+tlePath = os.path.join(config.get('TLE', 'tleDir'), config.get('TLE', 'tleFile'))
 
 # QTH (ground location)
 qth = (float(config.get('QTH','lat')), float(config.get('QTH','lon')), float(config.get('QTH','alt')))
@@ -67,6 +65,15 @@ class SatPass:
         
 # update an array of weather sats from a TLE file
 def updateTLE(satellites, tleFilePath):
+    try:
+        tle_url = config.get('TLE', 'tleUrl')     
+        response = requests.get(tle_url)
+        with open(tleFilePath, "wb") as f:
+            f.write(response.content)
+            logging.info('Cached new TLE')
+    except requests.ConnectionError:
+        logging.warning('Failed to update TLE')
+
     try:
         logging.info('Ingesting TLEs from {}'.format(tleFilePath))
         tleFile=open(tleFilePath)
@@ -118,8 +125,8 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
     timeLeft = duration
     for filecount in range(num_chunks):
         outfileName = 'signalchunk_{}'.format(filecount)
-        dataDir = config.get('DIRS', 'dataDir')
-        outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), "{}.raw".format(outfileName)))
+        dataDir = config.get('OUTPUTS', 'dataDir')
+        outfilePath_raw = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'raw'), "{}.raw".format(outfileName)))
 
         # resample, APT decode, trancode, and upload are handled after rtl_fm, in a separate thread
         # after second chunk upload, inform the app server to begin performance
@@ -157,11 +164,11 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
 def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
-    dataDir = config.get('DIRS', 'dataDir')
-    in_raw = os.path.join(dataDir, os.path.join(config.get('DIRS', 'raw'), '{}.raw'.format(filename)))
-    out_wav = os.path.join(dataDir, os.path.join(config.get('DIRS', 'wav'), '{}.wav'.format(filename)))
-    out_mp3 = os.path.join(dataDir, os.path.join(config.get('DIRS', 'mp3'), '{}.mp3'.format(filename)))
-    out_img = os.path.join(dataDir, os.path.join(config.get('DIRS', 'img'), '{}.png'.format(filename)))
+    dataDir = config.get('OUTPUTS', 'dataDir')
+    in_raw = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'raw'), '{}.raw'.format(filename)))
+    out_wav = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'wav'), '{}.wav'.format(filename)))
+    out_mp3 = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'mp3'), '{}.mp3'.format(filename)))
+    out_img = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'img'), '{}.png'.format(filename)))
 
     # sox transformer: raw to wav
     sox_raw2wav = sox.Transformer()
