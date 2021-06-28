@@ -36,7 +36,6 @@ minElev = float(config.get('QTH', 'minElev'))
 
 # global AWS S3 object
 s3 = boto3.resource('s3')
-# snsclient = boto3.client('sns', region_name=config.get('AWS','region_name'))
 sqsclient = boto3.client('sqs', region_name=config.get('AWS','region_name'))
 
 
@@ -192,12 +191,13 @@ def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
     proc.wait()
 
     # upload files to S3
+    bucket_name = config.get('AWS', 's3_bucket')
     logging.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
     img = open(out_img, 'rb')
-    s3.Bucket('ground-station-prototype-eb').put_object(Key='image/{}.png'.format(filename), Body=img)
+    s3.Bucket(bucket_name).put_object(Key='image/{}.png'.format(filename), Body=img)
     logging.info('Image upload completed [chunk {}]'.format(filecount))
     mp3 = open(out_mp3, 'rb')
-    s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
+    s3.Bucket(bucket_name).put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
     logging.info('Audio upload completed [chunk {}]'.format(filecount))
 
     # on second chunk upload completed, inform the app server to begin performance
@@ -260,18 +260,7 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
         MessageDeduplicationId=performanceId
     )
     return(response)
-
-    # try:
-    #     # send the recording plan to the cloud (SNS)
-    #     response = snsclient.publish(
-    #         TargetArn=config.get('AWS', 'sns_arn'),
-    #         Message=json.dumps({'default': json.dumps(message)}),
-    #         MessageStructure='json'
-    #     )
-    #     message_id = response['MessageId']
-    #     logging.info('SNS: pushed pass metadata to {}'.format(config.get('AWS', 'sns_arn')))
-    # except:
-    #     logging.exception('SNS: failed pushing pass metadata to {}'.format(config.get('AWS', 'sns_arn')))    
+     
 
 # given a process name, if it is found running, kill it
 def tryKill(processname):
