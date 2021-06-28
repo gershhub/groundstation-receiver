@@ -1,5 +1,5 @@
 #!/bin/bash
-TLEDIR=/tmp
+TLEDIR=/home/slowimmediate/groundstation-data/TLE
 
 rm $TLEDIR/noaa.txt
 while [ 1 ]; do
