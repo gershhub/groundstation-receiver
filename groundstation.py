@@ -96,6 +96,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
                '-s', config.get('SDR', 'samplerate'),   # sample rate of demodulated signal
                '-g', config.get('SDR', 'gain'),         # SDR RF gain
                '-F', '9',                               # enable downsample filter
+               '-E', 'dc',
                '-E', 'deemp',                           # enable de-emphasis filter
                '-p', config.get('SDR', 'shift'),        # SDR ppm error
                '-T']                                    # enable bias tee
@@ -246,7 +247,7 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
         "performanceId": performanceId,
         "startTimestamp": startTimestamp,
         "duration": duration,
-        "segments": soundFiles
+        "segments": segments
     }
     
     logging.info('Sending SQS message: {}'.format(str(message)))
@@ -304,7 +305,7 @@ if __name__ == "__main__":
 
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
-                logging.info(' {} at {} UTC, max elev. {} degrees'.format(sat.identifier, sat.nextPass.passTime, round(sat.nextPass.elevation)))
+                logging.info(' {} at {} UTC, max elev. {} degrees'.format(sat.identifier, str(sat.nextPass.passTime).split('.')[0], round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
         
         # just in case rtl_fm is still running, if python was shut down uncleanly
