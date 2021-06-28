@@ -174,14 +174,14 @@ def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
 
     # sox transformer: raw to mp3
     sox_raw2mp3 = sox.Transformer()
-    sox_raw2mp3.set_input_format(file_type='wav',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
+    sox_raw2mp3.set_input_format(file_type='raw',rate=int(config.get('SDR', 'samplerate')),bits=16,channels=1,encoding='signed-integer')
     sox_raw2mp3.set_output_format(file_type='mp3',rate=int(config.get('SDR', 'mp3rate')))
     logging.info('Starting sox raw to mp3 with sox [chunk {}]'.format(filecount))
-    success = sox_raw2wav.build(in_raw, out_mp3)
+    success = sox_raw2mp3.build(in_raw, out_mp3)
     if not success:
         logging.warning('Raw to mp3 resample/transcode failed! [chunk {}]'.format(filecount))
 
-    # aptdec: decode APT from wav
+    # decode APT from wav
     logging.info('Starting APT decode [chunk {}]'.format(filecount))
     # aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     satid = passInfo['satellite'].identifier.lower().replace(' ', '_')
@@ -260,7 +260,7 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
         MessageDeduplicationId=performanceId
     )
     return(response)
-     
+
 
 # given a process name, if it is found running, kill it
 def tryKill(processname):
