@@ -68,12 +68,15 @@ def updateTLE(satellites, tleFilePath):
     try:
         tle_url = config.get('TLE', 'tleUrl')     
         response = requests.get(tle_url)
-        with open(tleFilePath, "wb") as f:
-            f.write(response.content)
-            logging.info('Cached new TLE')
+        if(response.status_code==200 and response.content.decode().startswith('NOAA')):
+            with open(tleFilePath, "wb") as f:
+                f.write(response.content)
+                logging.info('Cached new TLE')
+        else:
+            logging.error('Bad Response: Failed to update TLE')
     except requests.ConnectionError:
-        logging.warning('Failed to update TLE')
-
+        logging.error('Connection Error: Failed to update TLE')
+        raise
     try:
         logging.info('Ingesting TLEs from {}'.format(tleFilePath))
         tleFile=open(tleFilePath)
@@ -87,8 +90,8 @@ def updateTLE(satellites, tleFilePath):
                         tle.append(l.strip('\r\n').rstrip())
             sat.TLE = tle
     except OSError as e:
-        logging.warning('OS Error during command: ' + ' '.join(cmdline))
-        logging.warning('OS Error: ' + e.strerror)
+        logging.error('OS Error: ' + e.strerror)
+        raise
 
 
 
