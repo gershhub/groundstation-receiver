@@ -8,7 +8,5 @@ while [ 1 ]; do
     /bin/sleep 1;
 done;
 
-# wget -qr https://www.celestrak.com/NORAD/elements/noaa.txt -O $TLEDIR/noaa.txt
-
 echo `date`
 echo Updated
