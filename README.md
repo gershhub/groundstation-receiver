@@ -54,3 +54,6 @@ A few test scripts are available in the [test directory](test/), and do not requ
 - [Self-amalgamating tape](https://www.amazon.fr/gp/product/B00WSLTVFY/)
 - CR2302 coin cell battery for real time clock (RTC)
 
+### Setup
+
+<img src="support/groundstation-upper-level.jpg" alt="groundstation receiver PCB board configuration" width="389"/> <img src="support/groundstation-lower-level.jpg" alt="groundstation receiver wiring" width="400"/>
