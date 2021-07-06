@@ -41,7 +41,8 @@ A few test scripts are available in the [test directory](test/), and do not requ
 - [Raspberry Pi 4 Model B](https://www.raspberrypi.org/products/raspberry-pi-4-model-b/) or equivalent
 - [Nebra IP67 Waterproof/Weatherproof Enclosure](https://uk.pi-supply.com/products/die-cast-outdoor-weatherproof-enclosure), option with pre-installed PoE cable gland
 - [HAT Mounting Raspberry Pi Expansion Board](https://uk.pi-supply.com/products/nebra-ip67-case-gateway-hat-mounting-and-expansion-board)
-- [LOVERPI PoE Hat with 3kV isolation](https://www.loverpi.com/collections/raspberry-pi-poe-hat/products/loverpi-poe-hat-for-raspberry-pi-4?variant=39317204992058)
+- [PoE Hat with isolation](https://www.loverpi.com/collections/raspberry-pi-poe-hat/products/loverpi-poe-hat-for-raspberry-pi-4?variant=39317204992058)
+- [Real time clock (RTC)](https://uk.pi-supply.com/products/rtc-pi)
 - [Amphenol 242125 SMA Jack to N-type Bulkhead](https://www.mouser.fr/ProductDetail/amphenol/242125/?qs=d6ov5MOrwvFQ0NGbrnP6Gg==)
 - [M10 vent plug with o-ring](https://www.mouser.fr/ProductDetail/bud-industries/ipv-67101-b/?qs=BJlw7L4Cy7%2FefKOhF054KA==)
 - [50ohm coax](https://www.wimo.com/en/40335-x)
@@ -51,4 +52,5 @@ A few test scripts are available in the [test directory](test/), and do not requ
 - M2.5 and M3 hardware (stand-offs and screws)
 - Silica gel packets
 - [Self-amalgamating tape](https://www.amazon.fr/gp/product/B00WSLTVFY/)
+- CR2302 coin cell battery for real time clock (RTC)
 
