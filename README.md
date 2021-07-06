@@ -8,7 +8,7 @@ On the recording side, the most significant functional difference between Receiv
 
 Before running, ensure that all dependencies are installed, and that Boto3 is properly configured for access to your personal S3 and SQS, if using AWS. A setup guide is available [here](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/quickstart.html#configuration). Configuration is set via `groundstation.cfg`, which is loaded by `groundstation.py`.
 
-Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation.py`. Due to firewall limitations in our final installation, we mirror the TLEs on our AWS instance and retrieve from there. `groundstation.py` also attempts to retrieve and set local time from the AWS / application server instance, as public ntp was not available in our installation setting.
+Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation.py` (default). Due to firewall limitations in our particular installation, we mirror TLEs on our AWS instance and retrieve from there. 
 
 ### Dependencies
 
