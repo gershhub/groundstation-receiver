@@ -12,6 +12,10 @@ Before running, ensure that all dependencies are installed, and that Boto3 is pr
 
 Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation.py` (default). Due to firewall limitations in our particular installation, we mirror TLEs on our AWS instance and retrieve from there. 
 
+### In installation
+
+Assembled for its Hong Kong deployment at Mplus museum, Ground Station Receiver should start up all relevant scripts upon receiving power over ethernet. The device is configured to sync time from [Internet Time Server of the Hong Kong Observatory](https://www.hko.gov.hk/en/nts/ntime.htm) at stdtime.gov.hk.
+
 ### Dependencies
 
 - python3
@@ -29,7 +33,7 @@ Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation
 
 Example systemd service files are available for both `updateTLE.sh` and `groundstation.py`. Supervisord configuration is also provided. For convenient process control and debugging, we use supervisord in place of systemd so as to allow local support at the installation site to review program logs through supervisord's simple web interface on `localhost:9001`. 
 
-### Testing and debugging
+### Testing, debugging, and updating
 
 [ngrok](https://ngrok.com/) is a useful tool for tunneling to an embedded computer in case of fixes needed or to review data. In addition to uploading the recordings to AWS, we expose them via local webserver and use ngrok to make them securely available to the internet when necessary. This feature defaults off, and can be turned on locally via the supervisord web interface at `localhost:9001`, along with a reverse ssh tunnel option.
 
