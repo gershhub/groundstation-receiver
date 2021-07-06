@@ -58,4 +58,4 @@ A few test scripts are available in the [test directory](test/), and do not requ
 
 <img src="support/groundstation-upper-level.jpg" alt="groundstation receiver PCB board configuration" width="389"/> <img src="support/groundstation-lower-level.jpg" alt="groundstation receiver wiring" width="400"/>
 
-<img src="support/nebra-case-hw.jpg" alt="nebra ip67 case hole sizes" width="389"/>
+<img src="support/nebra-case-hw.jpg" alt="nebra ip67 case hole sizes" width="600"/>
