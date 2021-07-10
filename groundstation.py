@@ -262,7 +262,7 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
     
     logging.info('Sending SQS message: {}'.format(str(message)))
 
-    queue_url = config.get('AWS', 'sqs_url')
+    queue_url = config.get('AWS', 'sqs_passdata_url')
     response = sqsclient.send_message(
         QueueUrl=queue_url,
         MessageBody=json.dumps({'default': json.dumps(message)}),
@@ -327,4 +327,4 @@ if __name__ == "__main__":
             tleLastUpdated = datetime.now(timezone.utc).day
 
         # sleep for a couple minutes
-        time.sleep(120)
+        time.sleep(90)
