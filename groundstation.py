@@ -62,6 +62,7 @@ class SatPass:
         self.duration = passDuration
         self.elevation = passElevation
         self.lastUpdated = datetime.now(timezone.utc)
+        self.performanceId = None
         
 # update an array of weather sats from a TLE file
 def updateTLE(satellites, tleFilePath):
@@ -212,19 +213,13 @@ def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
 
     # on second chunk upload completed, inform the app server to begin performance
     if(inform):
-        informSQS(passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
+        informSQSPass(passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
 
-    # remove files from local 
-    # logging.info('Removing local files')
-    # os.remove(in_raw)
-    # os.remove(out_wav)
-    # os.remove(out_mp3)
-    # os.remove(out_img)
 
-def informSQS(satellite, minChunkDuration, maxChunkDuration):
+def informSQSPass(satellite, minChunkDuration, maxChunkDuration):
 
     # zero padded number of recordings made since script start
-    performanceId = str(uuid4())
+    performanceId = satellite.nextPass.performanceID
 
     # number of chunks in total duration of pass
     num_chunks = satellite.nextPass.duration / maxChunkDuration
@@ -259,8 +254,6 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
         "duration": duration,
         "segments": segments
     }
-    
-    logging.info('Sending SQS message: {}'.format(str(message)))
 
     queue_url = config.get('AWS', 'sqs_passdata_url')
     response = sqsclient.send_message(
@@ -269,7 +262,25 @@ def informSQS(satellite, minChunkDuration, maxChunkDuration):
         MessageGroupId='groundstation-receiver',
         MessageDeduplicationId=performanceId
     )
+    logging.info('Sending SQS pass info: {}\n  --> SQS Response: {}'.format(str(message), response))
     return(response)
+
+def informSQSPreview(satellite):
+    # send SQS message with upcoming pass data (preview)
+    # satellite nextPass should already been assigned its unique performanceID before this is called
+    message = {
+        "nextsatelliteName": satellite.identifier,
+        "nextperformanceStartTime": round(satellite.nextPass.passTime.timestamp()),
+        "nextperformanceId": satellite.nextPass.performanceID,
+    }
+    queue_url = config.get('AWS', 'sqs_preview_url')
+    response = sqsclient.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps({'default': json.dumps(message)}),
+        MessageGroupId='groundstation-receiver',
+        MessageDeduplicationId=satellite.nextPass.performanceID
+    )
+    logging.info('Sending SQS preview info: {}\n  --> SQS Response: {}'.format(str(message), response))
 
 
 # given a process name, if it is found running, kill it
@@ -301,6 +312,10 @@ if __name__ == "__main__":
 
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime
+        satQueue[0].nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
+
+        # send SQS message with upcoming pass data
+        informSQSPreview(satQueue[0])
 
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
