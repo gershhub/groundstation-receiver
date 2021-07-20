@@ -2,7 +2,7 @@ import time
 import os
 import boto3
 
-s3_bucket = 'ground-station-prototype-eb'
+s3_bucket = 'ground-station-prod'
 
 if __name__ == "__main__":
     # AWS S3 object
@@ -18,14 +18,14 @@ if __name__ == "__main__":
         
         img = open(img_path, 'rb')
         try:
-            s3.Bucket('ground-station-prototype-eb').put_object(Key='image/{}'.format(image_file), Body=img)
+            s3.Bucket(s3_bucket).put_object(Key='image/{}'.format(image_file), Body=img)
         except ClientError as e:
             print(e)
         img.close()
 
         audio = open(audio_path, 'rb')
         try:
-            s3.Bucket('ground-station-prototype-eb').put_object(Key='audio/{}'.format(audio_file), Body=audio)
+            s3.Bucket(s3_bucket).put_object(Key='audio/{}'.format(audio_file), Body=audio)
         except ClientError as e:
             print(e)
         audio.close()

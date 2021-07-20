@@ -23,19 +23,6 @@ elif len(sys.argv) == 2:
 # load config file
 config = cfg.get(configFile)
 
-# TLE file should be updated on a regular basis by a separate process
-tlePath = os.path.join(config.get('TLE', 'tleDir'), config.get('TLE', 'tleFile'))
-
-# QTH (ground location)
-qth = (float(config.get('QTH','lat')), float(config.get('QTH','lon')), float(config.get('QTH','alt')))
-
-# minimum elevation (angle in degrees) considered for recording
-minElev = float(config.get('QTH', 'minElev'))
-
-# global AWS S3 object
-s3 = boto3.resource('s3')
-sqsclient = boto3.client('sqs', region_name=config.get('AWS','region_name'))
-
 
 # a handy place to keep state about the satellites being recording
 class WeatherSatellite:
@@ -45,7 +32,7 @@ class WeatherSatellite:
         self.TLE = None
         self.nextPass = None
     
-    def predictNextPass(self, qth):
+    def predictNextPass(self, qth, minElev):
         p = predict.transits(self.TLE, qth)
         transit = next(p)
         while(transit.peak()['elevation'] < minElev):
@@ -63,11 +50,18 @@ class SatPass:
         self.elevation = passElevation
         self.lastUpdated = datetime.now(timezone.utc)
         self.performanceId = None
+
+class AWS:
+    def __init__(self, region_name):
+        self.s3 = boto3.resource('s3')
+        self.sqsclient = boto3.client('sqs', region_name)
+        self.sqs_passdata_url = None
+        self.sqs_preview_url = None
+
         
 # update an array of weather sats from a TLE file
-def updateTLE(satellites, tleFilePath):
-    try:
-        tle_url = config.get('TLE', 'tleUrl')     
+def updateTLE(satellites, tleFilePath, tle_url):
+    try:    
         response = requests.get(tle_url)
         if(response.status_code==200 and response.content.decode().startswith('NOAA')):
             with open(tleFilePath, "wb") as f:
@@ -97,7 +91,7 @@ def updateTLE(satellites, tleFilePath):
 
 
 # record demodulated signals over a given duration, breaking the recordings into chunks 
-def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
+def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
 
     # options for rtl_fm, which captures and demodulates FM signals
     # rtl_fm is an external application included with rtl-sdr
@@ -143,7 +137,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
         else: inform = False
         transcodeDecodeUploadThread = threading.Thread(
             target = transcodeDecodeUpload, 
-            args = ( outfileName, filecount, passInfo, inform)
+            args = ( outfileName, filecount, passInfo, aws, inform)
         )
 
         try:
@@ -159,7 +153,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
             logging.info('Starting decode thread [chunk {}]'.format(filecount))
             timeLeft = timeLeft - chunkDuration
             transcodeDecodeUploadThread.start()
-            time.sleep(2) # let's just ... ignore these 2 seconds ... 
+            time.sleep(2) # 2 seconds for radio reset
         except OSError as e:
             logging.warning('OS Error during command: ' + ' '.join(cmdline))
             logging.warning('OS Error: ' + e.strerror)
@@ -167,7 +161,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration):
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
+def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False):
     dataDir = config.get('OUTPUTS', 'dataDir')
     in_raw = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'raw'), '{}.raw'.format(filename)))
     out_wav = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'wav'), '{}.wav'.format(filename)))
@@ -196,6 +190,7 @@ def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
     logging.info('Starting APT decode [chunk {}]'.format(filecount))
     # aptdec = ['aptdec', out_wav, '-o', os.path.relpath(out_img)]
     satid = passInfo['satellite'].identifier.lower().replace(' ', '_')
+    tlePath = os.path.join(config.get('TLE', 'tleDir'), config.get('TLE', 'tleFile'))
     aptdec = ['noaa-apt', out_wav, '-o', os.path.relpath(out_img), '-T', tlePath, '-s', satid, '-c', 'histogram']
     
     proc = subprocess.Popen(aptdec)
@@ -205,26 +200,28 @@ def transcodeDecodeUpload(filename, filecount, passInfo, inform=False):
     bucket_name = config.get('AWS', 's3_bucket')
     logging.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
     img = open(out_img, 'rb')
-    s3.Bucket(bucket_name).put_object(Key='image/{}.png'.format(filename), Body=img)
+    aws.s3.Bucket(bucket_name).put_object(Key='image/{}.png'.format(filename), Body=img)
     logging.info('Image upload completed [chunk {}]'.format(filecount))
     mp3 = open(out_mp3, 'rb')
-    s3.Bucket(bucket_name).put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
+    aws.s3.Bucket(bucket_name).put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
     logging.info('Audio upload completed [chunk {}]'.format(filecount))
 
     # on second chunk upload completed, inform the app server to begin performance
     if(inform):
-        informSQSPass(passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
+        informSQSPass(aws, passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
 
 
-def informSQSPass(satellite, minChunkDuration, maxChunkDuration):
-
+def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
+    # include 2 second radio reset delay
+    maxChunkDuration = maxChunkDuration + 2
+    
     # zero padded number of recordings made since script start
     performanceId = satellite.nextPass.performanceID
 
     # number of chunks in total duration of pass
     num_chunks = satellite.nextPass.duration / maxChunkDuration
 
-    # cut off the last bit if it is less than minChunkDuration
+    # cut off the last bit if it is less than minChunkDuration 
     if(satellite.nextPass.duration % maxChunkDuration >= minChunkDuration):
         num_chunks = math.ceil(num_chunks)
         duration = math.floor(satellite.nextPass.duration)
@@ -255,9 +252,8 @@ def informSQSPass(satellite, minChunkDuration, maxChunkDuration):
         "segments": segments
     }
 
-    queue_url = config.get('AWS', 'sqs_passdata_url')
-    response = sqsclient.send_message(
-        QueueUrl=queue_url,
+    response = aws.sqsclient.send_message(
+        QueueUrl=aws.sqs_passdata_url,
         MessageBody=json.dumps({'default': json.dumps(message)}),
         MessageGroupId='groundstation-receiver',
         MessageDeduplicationId=performanceId
@@ -265,7 +261,7 @@ def informSQSPass(satellite, minChunkDuration, maxChunkDuration):
     logging.info('Sending SQS pass info: {}\n  --> SQS Response: {}'.format(str(message), response))
     return(response)
 
-def informSQSPreview(satellite):
+def informSQSPreview(aws, satellite):
     # send SQS message with upcoming pass data (preview)
     # satellite nextPass should already been assigned its unique performanceID before this is called
     message = {
@@ -273,9 +269,8 @@ def informSQSPreview(satellite):
         "nextperformanceStartTime": round(satellite.nextPass.passTime.timestamp()),
         "nextperformanceId": satellite.nextPass.performanceID,
     }
-    queue_url = config.get('AWS', 'sqs_preview_url')
-    response = sqsclient.send_message(
-        QueueUrl=queue_url,
+    response = aws.sqsclient.send_message(
+        QueueUrl=aws.sqs_preview_url,
         MessageBody=json.dumps({'default': json.dumps(message)}),
         MessageGroupId='groundstation-receiver',
         MessageDeduplicationId=satellite.nextPass.performanceID
@@ -292,13 +287,29 @@ def tryKill(processname):
 
 
 if __name__ == "__main__":
+    # TLE file should be updated regularly
+    tlePath = os.path.join(config.get('TLE', 'tleDir'), config.get('TLE', 'tleFile'))
+    tleUrl = config.get('TLE', 'tleUrl') 
+    
+    # QTH (ground location)
+    qth = (float(config.get('QTH','lat')), float(config.get('QTH','lon')), float(config.get('QTH','alt')))
+
+    # minimum elevation (angle in degrees) considered for recording
+    minElev = float(config.get('QTH', 'minElev'))
+
+    # global AWS object to be passed around
+    region_name = config.get('AWS','region_name')
+    aws = AWS(region_name)
+    aws.sqs_passdata_url = config.get('AWS', 'sqs_passdata_url')
+    aws.sqs_preview_url = config.get('AWS', 'sqs_preview_url')
+
     satIDs = config.getlist('SATELLITES', 'identifiers')
     frequencies = config.getlist('SATELLITES', 'frequencies')
     satellites = []
     for satID, frequency in zip(satIDs, frequencies):
         satellites.append(WeatherSatellite(satID, frequency))
 
-    updateTLE(satellites, tlePath)
+    updateTLE(satellites, tlePath, tleUrl)
     tleLastUpdated = datetime.now(timezone.utc).day
 
     # min and max chunk durations for recordings
@@ -308,14 +319,14 @@ if __name__ == "__main__":
     # loop, sleeping until it's time to capture data
     while(True):
         # sort satellites by next pass, computed redundantly but not demanding for 3 satellites
-        satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth).passTime)
+        satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth, minElev).passTime)
 
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime
         satQueue[0].nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
 
         # send SQS message with upcoming pass data
-        informSQSPreview(satQueue[0])
+        informSQSPreview(aws, satQueue[0])
 
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
@@ -331,7 +342,7 @@ if __name__ == "__main__":
             satQueue[0].nextPass.duration, 
             satQueue[0].nextPass.elevation 
         ))
-        recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration)
+        recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration, aws)
         
         # just in case rtl_fm is still running, if python was shut down uncleanly
         tryKill('rtl_fm')
