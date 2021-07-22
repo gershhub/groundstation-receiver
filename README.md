@@ -12,6 +12,41 @@ Before running, ensure that all dependencies are installed, and that Boto3 is pr
 
 Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation.py` (default). Due to firewall limitations in our particular installation, we mirror TLEs on our AWS instance and retrieve from there. 
 
+Pass data are shared with the AWS application server by issuing messages to 2 different SQS queues, given in groundstation.cfg. The preview queue informs the application server of the next pass time, pass metadata, and a unique performanceID. Shortly after pass decoding begins, the performance queue infoms the application server of the files to expect during the recording process. 
+
+#### SQS Schema
+
+##### Preview Queue Schema
+
+    `message = {
+      "nextsatelliteName": name of satellite (e.g. NOAA 15),
+      "nextperformanceStartTime": timestamp of the next pass (given as unix time in UTC),
+      "nextperformanceId": performanceID (unique ID string for next pass)
+    }
+    
+    response = aws.sqsclient.send_message(
+      QueueUrl = sqs_preview_url,
+      MessageBody = json.dumps({'default': json.dumps(message)}),
+      MessageGroupId = 'groundstation-receiver',
+      MessageDeduplicationId = performanceID
+    )`
+    
+##### Performance Queue Schema
+
+    `message = {
+        "performanceId": performanceID,
+        "startTimestamp": startTimestamp,
+        "duration": duration,
+        "segments": segments
+    }
+
+    response = aws.sqsclient.send_message(
+        QueueUrl = aws.sqs_passdata_url,
+        MessageBody = json.dumps({'default': json.dumps(message)}),
+        MessageGroupI = 'groundstation-receiver',
+        MessageDeduplicationId = performanceId
+    )`
+
 ### In installation
 
 Assembled for its Hong Kong deployment at Mplus museum, Ground Station Receiver should start up all relevant scripts upon receiving power over ethernet. The device is configured to sync time from [Internet Time Server of the Hong Kong Observatory](https://www.hko.gov.hk/en/nts/ntime.htm) at stdtime.gov.hk.
