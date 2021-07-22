@@ -8,7 +8,7 @@ import sox, predict, boto3, cfg, requests
 # overrides predict and forces the next satellite pass 2 seconds from script execution
 testMode_recording = False
 
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
 # groundstation configuration 
 configFile = 'groundstation.cfg'
