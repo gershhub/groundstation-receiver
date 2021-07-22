@@ -2,9 +2,15 @@
 
 ## Test Scripts
 
-#### fakePass
+### fakePass
 
 `fakePass.py` uses pre-recorded audio and image chunks to simulate a NOAA satellite flight pass in order to test our AWS-hosted web application server. The application server is not included in this repository. 
+
+#### Usage
+
+Aftering configuring groundstation.cfg as well as local user AWS login credentials, run `python3 fakePass.py ../groundstation.cfg`.
+
+#### Description
 
 fakePass uses data from a 2021-07-10 10:22:27 UTC NOAA 19 pass over Hong Kong. Metadata are faked to simulate an imminent flight pass and recordings are presented as current. At start, fakePass sends a pass preview message to the SQS queue groundStationPreviewMessageQueueProd.fifo URL given in groundstation.cfg. The predicted pass time is given as between 91 and 94 seconds from script start (some small randomization for fun), and the duration is given as 922 seconds, corresponding to the recorded data. The script then sleeps for that ~91s period plus an additional 60s to simulate the radio chunk recording time. 
 
