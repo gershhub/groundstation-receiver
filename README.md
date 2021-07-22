@@ -41,7 +41,7 @@ Pass data are shared with the AWS application server by issuing messages to 2 di
     }
 
     response = aws.sqsclient.send_message(
-        QueueUrl = aws.sqs_passdata_url,
+        QueueUrl = sqs_passdata_url,
         MessageBody = json.dumps({'default': json.dumps(message)}),
         MessageGroupI = 'groundstation-receiver',
         MessageDeduplicationId = performanceId
