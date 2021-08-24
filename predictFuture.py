@@ -13,9 +13,11 @@ localtz = pytz.timezone('Asia/Hong_Kong')
 start_time = datetime(
     2021, 
     8, 
-    23, 
+    28, 
     0, 0, 0,
     tzinfo=localtz)
+
+# by default, just predicting all passes in one day
 end_time = datetime(
     start_time.year, 
     start_time.month, 
