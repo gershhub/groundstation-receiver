@@ -63,12 +63,8 @@ if __name__ == "__main__":
         default=20)
     args = parser.parse_args()
 
-
-
     localtz = pytz.timezone(args.timezone)
-    # start_time = datetime.strptime(args.date, '%Y-%m-%d')
     start_time = localtz.localize(args.date)
-
 
     # by default, just predicting all passes in one day
     end_time = datetime(
@@ -80,7 +76,7 @@ if __name__ == "__main__":
 
     # qth = (48.40745083192718, -2.69606179294, 0)
     qth = args.gps
-    qth[1] = -qth[1]
+    qth[1] = -qth[1] # sign of longitude is reversed for Predict library
     qth.append(args.altitude)
     
     minElev = args.elevation
