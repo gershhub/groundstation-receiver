@@ -8,6 +8,7 @@ import argparse
 # Only passes with max elevation > minElev are shown, and pass info will print in local time, according to localtz.
 #
 # Internet access is required in order to retrieve TLE telemetry data from Celestrak.
+# TLE file noaa.txt is written to /tmp by default.
 #
 # Note that the sign of qth longitude is reversed internally from normal (e.g. Google) for the predict library (west longitude).
 # The sign of longitude should be provided according to Google's convention (right click on Google Maps to copy your location).
