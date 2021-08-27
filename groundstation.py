@@ -32,13 +32,13 @@ class WeatherSatellite:
         self.TLE = None
         self.nextPass = None
     
-    def predictNextPass(self, qth, minElev):
+    def predictNextPass(self, qth, minElev, cut_start, cut_end):
         p = predict.transits(self.TLE, qth)
         transit = next(p)
         while(transit.peak()['elevation'] < minElev):
             transit = next(p)
-        dt_ts = datetime.fromtimestamp(transit.start, tz=timezone.utc)
-        self.nextPass = SatPass(dt_ts,  transit.duration(), transit.peak()['elevation'])
+        dt_ts = datetime.fromtimestamp(transit.start + cut_start, tz=timezone.utc)
+        self.nextPass = SatPass(dt_ts,  transit.duration()-(cut_start + cut_end), transit.peak()['elevation'])
         if testMode_recording:
             self.nextPass = SatPass(datetime.now(timezone.utc) + timedelta(seconds=2),  transit.duration(), transit.peak()['elevation'])
         return self.nextPass
@@ -52,9 +52,9 @@ class SatPass:
         self.performanceId = None
 
 class AWS:
-    def __init__(self, region_name):
-        self.s3 = boto3.resource('s3')
-        self.sqsclient = boto3.client('sqs', region_name)
+    def __init__(self, s3_region, sqs_region):
+        self.s3 = boto3.resource('s3', region_name=s3_region)
+        self.sqsclient = boto3.client('sqs', region_name=sqs_region)
         self.sqs_passdata_url = None
         self.sqs_preview_url = None
 
@@ -297,9 +297,14 @@ if __name__ == "__main__":
     # minimum elevation (angle in degrees) considered for recording
     minElev = float(config.get('QTH', 'minElev'))
 
+    # time (in seconds) to cut from the beginning and end of the full pass to avoid recording noise
+    cut_start = float(config.get('OUTPUTS','cut_start'))
+    cut_end = float(config.get('OUTPUTS','cut_end'))
+
     # global AWS object to be passed around
-    region_name = config.get('AWS','region_name')
-    aws = AWS(region_name)
+    s3_region = config.get('AWS','s3_region')
+    sqs_region = config.get('AWS','sqs_region')
+    aws = AWS(s3_region=s3_region, sqs_region=sqs_region)
     aws.sqs_passdata_url = config.get('AWS', 'sqs_passdata_url')
     aws.sqs_preview_url = config.get('AWS', 'sqs_preview_url')
 
@@ -319,7 +324,7 @@ if __name__ == "__main__":
     # loop, sleeping until it's time to capture data
     while(True):
         # sort satellites by next pass, computed redundantly but not demanding for 3 satellites
-        satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth, minElev).passTime)
+        satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth, minElev, cut_start, cut_end).passTime)
 
         currentTime = datetime.now(timezone.utc)
         timeUntilPass = satQueue[0].nextPass.passTime - currentTime

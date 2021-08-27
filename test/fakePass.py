@@ -27,8 +27,9 @@ if __name__ == "__main__":
 
     # global AWS object passed around
     # configure endpoints, region, etc in groundstation.cfg
-    region_name = config.get('AWS','region_name')
-    aws = AWS(region_name)
+    s3_region = config.get('AWS','s3_region')
+    sqs_region = config.get('AWS','sqs_region')
+    aws = AWS(s3_region=s3_region, sqs_region=sqs_region)
     aws.sqs_passdata_url = config.get('AWS', 'sqs_passdata_url')
     aws.sqs_preview_url = config.get('AWS', 'sqs_preview_url')
 
