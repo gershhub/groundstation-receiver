@@ -236,11 +236,11 @@ def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
     for i in range(num_chunks):
         segments.append({
             'soundFile' : {
-                'bucketName': 'ground-station-prod',
+                'bucketName': 'ground-station-prod-hk-2',
                 'objectPath': 'audio/signalchunk_{}.mp3'.format(i)
             },
             'imageFile' : {
-                'bucketName': 'ground-station-prod',
+                'bucketName': 'ground-station-prod-hk-2',
                 'objectPath': 'image/signalchunk_{}.png'.format(i)
             }
         })
@@ -254,7 +254,7 @@ def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
 
     response = aws.sqsclient.send_message(
         QueueUrl=aws.sqs_passdata_url,
-        MessageBody=json.dumps({'default': json.dumps(message)}),
+        MessageBody=json.dumps(message),
         MessageGroupId='groundstation-receiver',
         MessageDeduplicationId=performanceId
     )
@@ -271,7 +271,7 @@ def informSQSPreview(aws, satellite):
     }
     response = aws.sqsclient.send_message(
         QueueUrl=aws.sqs_preview_url,
-        MessageBody=json.dumps({'default': json.dumps(message)}),
+        MessageBody=json.dumps(message),
         MessageGroupId='groundstation-receiver',
         MessageDeduplicationId=satellite.nextPass.performanceID
     )
