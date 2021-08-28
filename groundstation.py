@@ -107,7 +107,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
                '-E', 'deemp',                           # enable de-emphasis filter
                '-p', config.get('SDR', 'shift'),        # SDR ppm error
                '-T']                                    # enable bias tee
-    
+
     duration = math.floor(satellite.nextPass.duration)
 
     # number of chunks in total duration of pass
@@ -121,6 +121,8 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
         num_chunks = math.floor(num_chunks)
         logging.info('Beginning pass consisting of {}x {}s chunks, skipping last {}s of pass (< minChunkDuration)'.format(num_chunks, maxChunkDuration, duration % maxChunkDuration))
     
+    logging.info('Loop will call RTL_FM with arguments: {}'.format(rtl_fm))
+
     # the timing of the pass is not going to be very precise because of the apparent time required to release
     # the radio device between recordings (2 second sleep), but that should be ok
     timeLeft = duration
@@ -136,10 +138,14 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
                 'minChunkDuration' : minChunkDuration,
                 'maxChunkDuration' : maxChunkDuration
             }
-        if(filecount == 1): inform = True
-        else: inform = False
-        if(filecount == num_chunks-1): lastChunk = True
-        else: lastChunk = False
+        if(filecount == 1): 
+            inform = True
+        else: 
+            inform = False
+        if(filecount == num_chunks-1): 
+            lastChunk = True
+        else: 
+            lastChunk = False
         transcodeDecodeUploadThread = threading.Thread(
             target = transcodeDecodeUpload, 
             args = ( outfileName, filecount, passInfo, aws, inform, lastChunk)
