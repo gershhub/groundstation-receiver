@@ -43,7 +43,8 @@ class WeatherSatellite:
         dt_ts = datetime.fromtimestamp(transit.start + cut_start, tz=timezone.utc)
         self.nextPass = SatPass(dt_ts,  transit.duration()-(cut_start + cut_end), transit.peak()['elevation'])
         if testMode_recording:
-            self.nextPass = SatPass(datetime.now(timezone.utc) + timedelta(seconds=2),  transit.duration(), transit.peak()['elevation'])
+            # transit.duration()
+            self.nextPass = SatPass(datetime.now(timezone.utc) + timedelta(seconds=2), 120, transit.peak()['elevation'])
         return self.nextPass
 
 class SatPass:
@@ -57,11 +58,21 @@ class SatPass:
 class AWS:
     def __init__(self, s3_region, sqs_region):
         self.s3 = boto3.resource('s3', region_name=s3_region)
+        self.s3_archive = boto3.resource('s3', region_name=sqs_region) # trying this in AP-EAST-1 (sqs region)
         self.sqsclient = boto3.client('sqs', region_name=sqs_region)
         self.sqs_passdata_url = None
         self.sqs_preview_url = None
 
-        
+# remove files (but not directories) from a given directory
+def removeFiles(directory):
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            logging.warning('Error {}: failed to remove {}'.format(e, file_path))
+
 # update an array of weather sats from a TLE file
 def updateTLE(satellites, tleFilePath, tle_url):
     try:    
@@ -126,6 +137,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
     # the timing of the pass is not going to be very precise because of the apparent time required to release
     # the radio device between recordings (2 second sleep), but that should be ok
     timeLeft = duration
+    outfiles = []
     for filecount in range(num_chunks):
         outfileName = 'signalchunk_{}'.format(filecount)
         dataDir = config.get('OUTPUTS', 'dataDir')
@@ -143,12 +155,12 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
         else: 
             inform = False
         if(filecount == num_chunks-1): 
-            lastChunk = True
+            allChunks = outfiles
         else: 
-            lastChunk = False
+            allChunks = []
         transcodeDecodeUploadThread = threading.Thread(
             target = transcodeDecodeUpload, 
-            args = ( outfileName, filecount, passInfo, aws, inform, lastChunk)
+            args = ( outfileName, filecount, passInfo, aws, inform, allChunks)
         )
 
         try:
@@ -160,6 +172,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
                 chunkDuration = duration % maxChunkDuration
             time.sleep(chunkDuration)
             child.terminate()
+            outfiles.append(outfileName)
             logging.info('Completed rtl_fm recording [chunk {}]'.format(filecount))
             logging.info('Starting decode thread [chunk {}]'.format(filecount))
             timeLeft = timeLeft - chunkDuration
@@ -172,7 +185,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, lastChunk=False):
+def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, allChunks=[]):
     dataDir = config.get('OUTPUTS', 'dataDir')
     in_raw = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'raw'), '{}.raw'.format(filename)))
     out_wav = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'wav'), '{}.wav'.format(filename)))
@@ -214,9 +227,11 @@ def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, last
         img = open(out_img, 'rb')
         aws.s3.Bucket(bucket_name).put_object(Key='image/{}.png'.format(filename), Body=img)
         logging.info('Image upload completed [chunk {}]'.format(filecount))
+        img.close()
         mp3 = open(out_mp3, 'rb')
         aws.s3.Bucket(bucket_name).put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
         logging.info('Audio upload completed [chunk {}]'.format(filecount))
+        mp3.close()
     else:
         logging.info('Uploading skipped [chunk {}]'.format(filecount))
 
@@ -224,10 +239,67 @@ def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, last
     if(inform):
         informSQSPass(aws, passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
     
-    if(lastChunk):
-        # perform the pass archiving routine
-        pass
+    # on the last chunk, perform an archiving routine that combines all audio files and decodes a complete image
+    # archives are uploaded to a separate s3 bucket for safekeeping
+    if(allChunks):
+        logging.info('Beginning pass archiving routine')
+        archive_path = os.path.join(dataDir, config.get('OUTPUTS','archive'))
 
+        # first, remove the last pass archive files
+        removeFiles(archive_path)
+        
+        # archive filenames follow a timestamp_satID format 
+        archive_filename = '{}_{}'.format(
+            passInfo['satellite'].nextPass.passTime.strftime('%Y-%m-%d-%H-%M-%S-%Z'),
+            passInfo['satellite'].identifier.replace(' ', '-'))
+        archive_filepath_wav = os.path.join(archive_path, '{}.wav'.format(archive_filename))
+        archive_filepath_mp3 = os.path.join(archive_path, '{}.mp3'.format(archive_filename))
+        archive_filepath_image = os.path.join(archive_path, '{}.png'.format(archive_filename))
+
+        # convert list of recorded chunks into paths to wav files
+        allChunksPath = list(map(lambda fn: os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'wav'), '{}.wav'.format(fn))), allChunks))
+        allChunksFormat = list(map(lambda fmt: 'wav', allChunks))
+        rate = int(config.get('SDR','wavrate'))
+        allChunksRate = list(map(lambda r: rate, allChunks))
+        
+        # combine all recording wav files into one file using sox
+        soxcombiner = sox.combine.Combiner()
+        soxcombiner.set_input_format(file_type=allChunksFormat, rate=allChunksRate)
+        success = soxcombiner.build(input_filepath_list=allChunksPath, output_filepath=archive_filepath_wav, combine_type='concatenate')
+        if not success:
+            logging.warning('Wav file archive failed! [{}]'.format(archive_filename))
+
+        # transcode to mp3
+        sox_wav2mp3 = sox.Transformer()
+        sox_wav2mp3.set_input_format(file_type='wav',rate=int(config.get('SDR', 'wavrate')))
+        sox_wav2mp3.set_output_format(file_type='mp3',rate=int(config.get('SDR', 'mp3rate')))
+        logging.info('Starting sox wav to mp3 [{}]'.format(archive_filename))
+        # encode the combined wav file to mp3
+        success = sox_wav2mp3.build(archive_filepath_wav, archive_filepath_mp3)
+        if not success:
+            logging.warning('Wav to mp3 resample/transcode failed! [{}]'.format(archive_filename))
+
+        satid = passInfo['satellite'].identifier.lower().replace(' ', '_')
+        logging.info('Starting APT decode for archive [{}]'.format(archive_filename))
+        aptdec = ['noaa-apt', archive_filepath_wav, '-o', os.path.relpath(archive_filepath_image), '-T', tlePath, '-s', satid, '-c', 'histogram']
+        proc = subprocess.Popen(aptdec)
+        proc.wait()
+        
+        if(upload):
+            logging.info('Starting S3 upload sequence for archive [{}]'.format(archive_filename))
+            archive_bucket_name = config.get('AWS', 's3_bucket_archive')              
+            img = open(archive_filepath_image, 'rb')
+            aws.s3_archive.Bucket(archive_bucket_name).put_object(Key='{}.png'.format(archive_filename), Body=img)
+            logging.info('Image upload completed [{}]'.format(archive_filename))
+            img.close()
+
+            mp3 = open(archive_filepath_mp3, 'rb')
+            aws.s3_archive.Bucket(archive_bucket_name).put_object(Key='{}.mp3'.format(archive_filename), Body=mp3)
+            logging.info('Audio upload completed [{}]'.format(archive_filename))
+            mp3.close()
+        else:
+            logging.info('Skipping S3 upload for archive [{}]'.format(archive_filename))
+        logging.info('Completed pass archiving routine')
 
 def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
     # include 2 second radio reset delay
