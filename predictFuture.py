@@ -120,6 +120,7 @@ if __name__ == "__main__":
 
     # for each NOAA satellite, run through predictions until we get to start_time.
     # then print info for each qualifying pass until we pass end_time
+    passes = {}
     for satID in TLE.keys():
         p = predict.transits(TLE[satID], qth)
         transit = next(p)
@@ -129,5 +130,8 @@ if __name__ == "__main__":
         while datetime.fromtimestamp(transit.start, tz=timezone.utc) < end_time:
             if(transit.peak()['elevation'] > minElev):
                 datestring = str(datetime.fromtimestamp(transit.start, tz=localtz)).split('.')[0]
-                print('{}: {} {}, duration={}s, max_elev={}'.format(satID, datestring, str(localtz).split('/')[1].replace('_', ' '), round(transit.duration()), round(transit.peak()['elevation'])))
+                passes[transit.start] = '{}: {} {}, max_elev={}'.format(satID, datestring, str(localtz), round(transit.peak()['elevation']))
             transit = next(p)
+    
+    for timestamp in sorted(passes.keys()):
+        print(passes[timestamp])

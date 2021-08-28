@@ -8,6 +8,9 @@ import sox, predict, boto3, cfg, requests
 # overrides predict and forces the next satellite pass 2 seconds from script execution
 testMode_recording = False
 
+# send recordings and metadata to AWS
+upload = True
+
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
 # groundstation configuration 
@@ -135,9 +138,11 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
             }
         if(filecount == 1): inform = True
         else: inform = False
+        if(filecount == num_chunks-1): lastChunk = True
+        else: lastChunk = False
         transcodeDecodeUploadThread = threading.Thread(
             target = transcodeDecodeUpload, 
-            args = ( outfileName, filecount, passInfo, aws, inform)
+            args = ( outfileName, filecount, passInfo, aws, inform, lastChunk)
         )
 
         try:
@@ -161,7 +166,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
 
 # transcode raw recording file, process APT decode, upload to S3, remove files
 # intended to be spun off as a thread while recording continues
-def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False):
+def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, lastChunk=False):
     dataDir = config.get('OUTPUTS', 'dataDir')
     in_raw = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'raw'), '{}.raw'.format(filename)))
     out_wav = os.path.join(dataDir, os.path.join(config.get('OUTPUTS', 'wav'), '{}.wav'.format(filename)))
@@ -197,18 +202,25 @@ def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False):
     proc.wait()
 
     # upload files to S3
-    bucket_name = config.get('AWS', 's3_bucket')
-    logging.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
-    img = open(out_img, 'rb')
-    aws.s3.Bucket(bucket_name).put_object(Key='image/{}.png'.format(filename), Body=img)
-    logging.info('Image upload completed [chunk {}]'.format(filecount))
-    mp3 = open(out_mp3, 'rb')
-    aws.s3.Bucket(bucket_name).put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
-    logging.info('Audio upload completed [chunk {}]'.format(filecount))
+    if(upload):
+        bucket_name = config.get('AWS', 's3_bucket')
+        logging.info('Starting S3 upload sequence [chunk {}]'.format(filecount))
+        img = open(out_img, 'rb')
+        aws.s3.Bucket(bucket_name).put_object(Key='image/{}.png'.format(filename), Body=img)
+        logging.info('Image upload completed [chunk {}]'.format(filecount))
+        mp3 = open(out_mp3, 'rb')
+        aws.s3.Bucket(bucket_name).put_object(Key='audio/{}.mp3'.format(filename), Body=mp3)
+        logging.info('Audio upload completed [chunk {}]'.format(filecount))
+    else:
+        logging.info('Uploading skipped [chunk {}]'.format(filecount))
 
     # on second chunk upload completed, inform the app server to begin performance
     if(inform):
         informSQSPass(aws, passInfo['satellite'], passInfo['minChunkDuration'], passInfo['maxChunkDuration'])
+    
+    if(lastChunk):
+        # perform the pass archiving routine
+        pass
 
 
 def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
@@ -252,14 +264,16 @@ def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
         "segments": segments
     }
 
-    response = aws.sqsclient.send_message(
-        QueueUrl=aws.sqs_passdata_url,
-        MessageBody=json.dumps(message),
-        MessageGroupId='groundstation-receiver',
-        MessageDeduplicationId=performanceId
-    )
-    logging.info('Sending SQS pass info: {}\n  --> SQS Response: {}'.format(str(message), response))
-    return(response)
+    if(upload):
+        response = aws.sqsclient.send_message(
+            QueueUrl=aws.sqs_passdata_url,
+            MessageBody=json.dumps(message),
+            MessageGroupId='groundstation-receiver',
+            MessageDeduplicationId=performanceId
+        )
+        logging.info('Sending SQS pass info: {}\n  --> SQS Response: {}'.format(str(message), response))
+    else:
+        logging.info('Skipped sending SQS pass info: {}'.format(str(message)))
 
 def informSQSPreview(aws, satellite):
     # send SQS message with upcoming pass data (preview)
@@ -269,13 +283,16 @@ def informSQSPreview(aws, satellite):
         "nextperformanceStartTime": round(satellite.nextPass.passTime.timestamp()),
         "nextperformanceId": satellite.nextPass.performanceID,
     }
-    response = aws.sqsclient.send_message(
-        QueueUrl=aws.sqs_preview_url,
-        MessageBody=json.dumps(message),
-        MessageGroupId='groundstation-receiver',
-        MessageDeduplicationId=satellite.nextPass.performanceID
-    )
-    logging.info('Sending SQS preview info: {}\n  --> SQS Response: {}'.format(str(message), response))
+    if(upload):
+        response = aws.sqsclient.send_message(
+            QueueUrl=aws.sqs_preview_url,
+            MessageBody=json.dumps(message),
+            MessageGroupId='groundstation-receiver',
+            MessageDeduplicationId=satellite.nextPass.performanceID
+        )
+        logging.info('Sending SQS preview info: {}\n  --> SQS Response: {}'.format(str(message), response))
+    else:
+        logging.info('Skipped sending SQS preview: {}'.format(str(message)))
 
 
 # given a process name, if it is found running, kill it
@@ -326,8 +343,7 @@ if __name__ == "__main__":
         # sort satellites by next pass, computed redundantly but not demanding for 3 satellites
         satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth, minElev, cut_start, cut_end).passTime)
 
-        currentTime = datetime.now(timezone.utc)
-        timeUntilPass = satQueue[0].nextPass.passTime - currentTime
+        timeUntilPass = satQueue[0].nextPass.passTime - datetime.now(timezone.utc)
         satQueue[0].nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
 
         # send SQS message with upcoming pass data
@@ -341,11 +357,12 @@ if __name__ == "__main__":
         # just in case rtl_fm is still running, if python was shut down uncleanly
         tryKill('rtl_fm')
 
-        logging.info('Beginning capture of {} at {}: duration {}, max_elev. {} degrees'.format(
+        logging.info('Beginning capture of {} at {} {}: duration {}, max_elev. {} degrees'.format(
             satQueue[0].identifier, 
-            currentTime, 
-            satQueue[0].nextPass.duration, 
-            satQueue[0].nextPass.elevation 
+            str(datetime.now(timezone.utc)).split('.')[0], 
+            str(timezone.utc),
+            round(satQueue[0].nextPass.duration), 
+            round(satQueue[0].nextPass.elevation)
         ))
         recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration, aws)
         
