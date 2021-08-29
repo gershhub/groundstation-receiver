@@ -6,10 +6,10 @@ import sox, predict, boto3, cfg, requests
 
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
-testMode_recording = False
+testMode_recording = True
 
 # send recordings and metadata to AWS
-upload = True
+upload = False
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
@@ -178,7 +178,7 @@ def recordChunksFM(satellite, minChunkDuration, maxChunkDuration, aws):
             logging.info('Starting decode thread [chunk {}]'.format(filecount))
             timeLeft = timeLeft - chunkDuration
             transcodeDecodeUploadThread.start()
-            time.sleep(2) # 2 seconds for radio reset
+            time.sleep(1) # 1 second for radio reset
         except OSError as e:
             logging.warning('OS Error during command: ' + ' '.join(cmdline))
             logging.warning('OS Error: ' + e.strerror)
@@ -303,8 +303,8 @@ def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, allC
         logging.info('Completed pass archiving routine')
 
 def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
-    # include 2 second radio reset delay
-    maxChunkDuration = maxChunkDuration + 2
+    # include 1 second radio reset delay
+    maxChunkDuration = maxChunkDuration + 1
     
     # zero padded number of recordings made since script start
     performanceId = satellite.nextPass.performanceID
