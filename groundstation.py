@@ -9,7 +9,7 @@ import sox, predict, boto3, cfg, requests
 testMode_recording = False
 
 # send recordings and metadata to AWS
-upload = False
+upload = True
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
@@ -421,20 +421,17 @@ if __name__ == "__main__":
     while(True):
         # sort satellites by next pass, computed redundantly but not demanding for 3 satellites
         satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth, minElev, cut_start, cut_end).passTime)
-        
         nextSat = satQueue[0]
-        timeUntilPass = nextSat.nextPass.passTime - datetime.now(timezone.utc)
 
+        # send SQS message with upcoming pass data
+        nextSat.nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
+        informSQSPreview(aws, nextSat)
+
+        timeUntilPass = nextSat.nextPass.passTime - datetime.now(timezone.utc)
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
                 logging.info(' {} at {} UTC, max elev. {} degrees'.format(sat.identifier, str(sat.nextPass.passTime).split('.')[0], round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
-
-        nextSat.nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
-
-        # send SQS message with upcoming pass data
-        informSQSPreview(aws, nextSat)
-
         
         # just in case rtl_fm is still running, if python was shut down uncleanly
         tryKill('rtl_fm')
