@@ -9,7 +9,7 @@ import sox, predict, boto3, cfg, requests
 testMode_recording = False
 
 # send recordings and metadata to AWS
-upload = True
+upload = False
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
@@ -38,7 +38,7 @@ class WeatherSatellite:
     def predictNextPass(self, qth, minElev, cut_start, cut_end):
         p = predict.transits(self.TLE, qth)
         transit = next(p)
-        while(transit.peak()['elevation'] < minElev):
+        while((transit.peak()['elevation'] < minElev) or (datetime.fromtimestamp(transit.start, tz=timezone.utc)-datetime.now(timezone.utc)).total_seconds()<0 ):
             transit = next(p)
         dt_ts = datetime.fromtimestamp(transit.start + cut_start, tz=timezone.utc)
         self.nextPass = SatPass(dt_ts,  transit.duration()-(cut_start + cut_end), transit.peak()['elevation'])
@@ -420,29 +420,32 @@ if __name__ == "__main__":
     while(True):
         # sort satellites by next pass, computed redundantly but not demanding for 3 satellites
         satQueue = sorted(satellites, key=lambda p : p.predictNextPass(qth, minElev, cut_start, cut_end).passTime)
-
-        timeUntilPass = satQueue[0].nextPass.passTime - datetime.now(timezone.utc)
-        satQueue[0].nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
-
-        # send SQS message with upcoming pass data
-        informSQSPreview(aws, satQueue[0])
+        
+        nextSat = satQueue[0]
+        timeUntilPass = nextSat.nextPass.passTime - datetime.now(timezone.utc)
 
         if(timeUntilPass.total_seconds()>0):
             for sat in satQueue:
                 logging.info(' {} at {} UTC, max elev. {} degrees'.format(sat.identifier, str(sat.nextPass.passTime).split('.')[0], round(sat.nextPass.elevation)))
             time.sleep(timeUntilPass.total_seconds())
+
+        nextSat.nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
+
+        # send SQS message with upcoming pass data
+        informSQSPreview(aws, nextSat)
+
         
         # just in case rtl_fm is still running, if python was shut down uncleanly
         tryKill('rtl_fm')
 
         logging.info('Beginning capture of {} at {} {}: duration {}, max_elev. {} degrees'.format(
-            satQueue[0].identifier, 
+            nextSat.identifier, 
             str(datetime.now(timezone.utc)).split('.')[0], 
             str(timezone.utc),
-            round(satQueue[0].nextPass.duration), 
-            round(satQueue[0].nextPass.elevation)
+            round(nextSat.nextPass.duration), 
+            round(nextSat.nextPass.elevation)
         ))
-        recordChunksFM(satQueue[0], minChunkDuration, maxChunkDuration, aws)
+        recordChunksFM(nextSat, minChunkDuration, maxChunkDuration, aws)
         
         # just in case rtl_fm is still running, if python was shut down uncleanly
         tryKill('rtl_fm')
