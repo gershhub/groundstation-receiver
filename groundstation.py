@@ -320,8 +320,8 @@ def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
         num_chunks = math.floor(num_chunks)
         duration = math.floor(satellite.nextPass.duration - satellite.nextPass.duration % maxChunkDuration)
     
-    # predicted pass start time
-    startTimestamp = math.ceil(satellite.nextPass.passTime.timestamp())
+    # predicted pass start time, including website time delay
+    startTimestamp = math.ceil(satellite.nextPass.passTime.timestamp()) + 2*(maxChunkDuration+1)
     
     segments = []
     for i in range(num_chunks):
@@ -354,12 +354,13 @@ def informSQSPass(aws, satellite, minChunkDuration, maxChunkDuration):
     else:
         logging.info('Skipped sending SQS pass info: {}'.format(str(message)))
 
-def informSQSPreview(aws, satellite):
+def informSQSPreview(aws, satellite, maxChunkDuration):
     # send SQS message with upcoming pass data (preview)
     # satellite nextPass should already been assigned its unique performanceID before this is called
+    # website time delay included in start time (2x chunk duration)
     message = {
         "nextsatelliteName": satellite.identifier,
-        "nextperformanceStartTime": round(satellite.nextPass.passTime.timestamp()),
+        "nextperformanceStartTime": round(satellite.nextPass.passTime.timestamp()) + 2*(maxChunkDuration+1), 
         "nextperformanceId": satellite.nextPass.performanceID,
     }
     if(upload):
@@ -414,8 +415,8 @@ if __name__ == "__main__":
     tleLastUpdated = datetime.now(timezone.utc).day
 
     # min and max chunk durations for recordings
-    minChunkDuration = 20
-    maxChunkDuration = 60
+    minChunkDuration = int(config.get('SDR', 'minChunkDuration'))
+    maxChunkDuration = int(config.get('SDR', 'maxChunkDuration'))
 
     # loop, sleeping until it's time to capture data
     while(True):
@@ -425,7 +426,7 @@ if __name__ == "__main__":
 
         # send SQS message with upcoming pass data
         nextSat.nextPass.performanceID = str(uuid4()) # give the upcoming pass a unique ID
-        informSQSPreview(aws, nextSat)
+        informSQSPreview(aws, nextSat, maxChunkDuration)
 
         timeUntilPass = nextSat.nextPass.passTime - datetime.now(timezone.utc)
         if(timeUntilPass.total_seconds()>0):
