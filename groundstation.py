@@ -38,7 +38,8 @@ class WeatherSatellite:
     def predictNextPass(self, qth, minElev, cut_start, cut_end):
         p = predict.transits(self.TLE, qth)
         transit = next(p)
-        while((transit.peak()['elevation'] < minElev) or (datetime.fromtimestamp(transit.start, tz=timezone.utc)-datetime.now(timezone.utc)).total_seconds()<0 ):
+        current_time = datetime.now(timezone.utc)
+        while((transit.peak()['elevation'] < minElev) or transit.start-datetime.timestamp(current_time)<0 ):
             transit = next(p)
         dt_ts = datetime.fromtimestamp(transit.start + cut_start, tz=timezone.utc)
         self.nextPass = SatPass(dt_ts,  transit.duration()-(cut_start + cut_end), transit.peak()['elevation'])
