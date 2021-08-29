@@ -6,10 +6,10 @@ import sox, predict, boto3, cfg, requests
 
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
-testMode_recording = True
+testMode_recording = False
 
 # send recordings and metadata to AWS
-upload = False
+upload = True
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
