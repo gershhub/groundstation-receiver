@@ -290,12 +290,12 @@ def transcodeDecodeUpload(filename, filecount, passInfo, aws, inform=False, allC
             logging.info('Starting S3 upload sequence for archive [{}]'.format(archive_filename))
             archive_bucket_name = config.get('AWS', 's3_bucket_archive')              
             img = open(archive_filepath_image, 'rb')
-            aws.s3_archive.Bucket(archive_bucket_name).put_object(Key='{}.png'.format(archive_filename), Body=img)
+            aws.s3_archive.Bucket(archive_bucket_name).put_object(Key='images/{}.png'.format(archive_filename), Body=img)
             logging.info('Image upload completed [{}]'.format(archive_filename))
             img.close()
 
             mp3 = open(archive_filepath_mp3, 'rb')
-            aws.s3_archive.Bucket(archive_bucket_name).put_object(Key='{}.mp3'.format(archive_filename), Body=mp3)
+            aws.s3_archive.Bucket(archive_bucket_name).put_object(Key='audio/{}.mp3'.format(archive_filename), Body=mp3)
             logging.info('Audio upload completed [{}]'.format(archive_filename))
             mp3.close()
         else:
