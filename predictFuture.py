@@ -1,5 +1,5 @@
 import predict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 import requests
 import argparse
@@ -65,16 +65,17 @@ if __name__ == "__main__":
 
     localtz = pytz.timezone(args.timezone)
     start_time = localtz.localize(args.date)
+    
+    localtime = datetime.now(localtz)
+    if(start_time.date()==localtime.date()):
+        offset = timedelta(hours=localtime.hour, minutes=localtime.minute)
+        start_time = start_time + offset
 
-    # by default, just predicting all passes in one day
-    end_time = datetime(
-        start_time.year, 
-        start_time.month, 
-        start_time.day + 1, 
-        0, 0, 0, 
-        tzinfo=localtz)
+    # predicts all passes in the calendar day following the date given, or 24 hours from now if given today
+    end_time = start_time + timedelta(days=1)
 
     # qth = (48.40745083192718, -2.69606179294, 0)
+    gps = [args.gps[0], args.gps[1]]
     qth = args.gps
     qth[1] = -qth[1] # sign of longitude is reversed for Predict library
     qth.append(args.altitude)
@@ -133,5 +134,10 @@ if __name__ == "__main__":
                 passes[transit.start] = '{}: {} {}, max_elev={}'.format(satID, datestring, str(localtz), round(transit.peak()['elevation']))
             transit = next(p)
     
-    for timestamp in sorted(passes.keys()):
-        print(passes[timestamp])
+    if(passes.keys()):
+        print('Passes at {} between {} and {}:'.format(gps, str(start_time),str(end_time)))
+        for timestamp in sorted(passes.keys()):
+            print(passes[timestamp])
+    else:
+        print('No passes remaining at {} on {} in {} time.'.format(gps, start_time.date(), localtz))
+        print('Perhaps try predicting the future.')
