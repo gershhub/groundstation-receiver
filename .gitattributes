@@ -1,0 +1,2 @@
+# Receiver code and service files run on Linux; keep text checkouts as LF.
+* text=auto eol=lf
