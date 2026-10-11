@@ -32,7 +32,7 @@ Pass data are shared with the AWS application server by issuing messages to 2 di
     
     response = aws.sqsclient.send_message(
       QueueUrl = sqs_preview_url,
-      MessageBody = json.dumps({'default': json.dumps(message)}),
+      MessageBody = json.dumps(message),
       MessageGroupId = 'groundstation-receiver',
       MessageDeduplicationId = performanceID
     )`
@@ -48,8 +48,8 @@ Pass data are shared with the AWS application server by issuing messages to 2 di
 
     response = aws.sqsclient.send_message(
         QueueUrl = sqs_passdata_url,
-        MessageBody = json.dumps({'default': json.dumps(message)}),
-        MessageGroupI = 'groundstation-receiver',
+        MessageBody = json.dumps(message),
+        MessageGroupId = 'groundstation-receiver',
         MessageDeduplicationId = performanceId
     )`
 
