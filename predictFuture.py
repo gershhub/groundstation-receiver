@@ -1,13 +1,13 @@
 import predict
 from datetime import datetime, timezone, timedelta
 import pytz
-import requests
 import argparse
+from tle import DEFAULT_TLE_URL, NOAA_SATELLITES, refresh_tles
 
 # predictFuture.py predicts the passes of NOAA 15, NOAA 18, and NOAA 19 between start_time and end_time (start_time + 1 day).
 # Only passes with max elevation > minElev are shown, and pass info will print in local time, according to localtz.
 #
-# Internet access is required in order to retrieve TLE telemetry data from Celestrak.
+# Internet access retrieves updated TLE data; a validated cache is used if unavailable.
 # TLE file noaa.txt is written to /tmp by default.
 #
 # Note that the sign of qth longitude is reversed internally from normal (e.g. Google) for the predict library (west longitude).
@@ -82,42 +82,10 @@ if __name__ == "__main__":
     
     minElev = args.elevation
 
-    # will load updated TLE data in here
-    TLE = {
-        'NOAA 15' : None,
-        'NOAA 18' : None,
-        'NOAA 19' : None,
-    }
-
     # download the latest TLE file from the URL and save it to file path below
-    tleUrl = 'https://www.celestrak.com/NORAD/elements/noaa.txt'
+    tleUrl = DEFAULT_TLE_URL
     tleFilePath = '/tmp/noaa.txt'
-    try:
-        response = requests.get(tleUrl)
-        if(response.status_code==200 and response.content.decode().startswith('NOAA')):
-            with open(tleFilePath, "wb") as f:
-                f.write(response.content)
-        else:
-            print('Bad Response: Failed to update TLE')
-    except requests.ConnectionError:
-        print('Connection Error: Failed to update TLE')
-        raise
-
-    # load in and parse the latest TLE file
-    try:
-        tleFile=open(tleFilePath)
-        tleData=tleFile.readlines()
-        tleFile.close()
-        for satID in TLE.keys():
-            tle=[]
-            for (i, line) in enumerate(tleData):
-                if(satID in line): 
-                    for l in tleData[i:i+3]:
-                        tle.append(l.strip('\r\n').rstrip())
-            TLE[satID] = tle
-    except OSError as e:
-        print('OS Error: ' + e.strerror)
-        raise
+    TLE = refresh_tles(tleFilePath, NOAA_SATELLITES, tleUrl).records
 
     # for each NOAA satellite, run through predictions until we get to start_time.
     # then print info for each qualifying pass until we pass end_time

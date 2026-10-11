@@ -2,7 +2,8 @@ import os, sys, subprocess, threading, time, math
 import operator, json, logging
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
-import sox, predict, boto3, cfg, requests
+import sox, predict, boto3, cfg
+from tle import refresh_tles
 
 
 # overrides predict and forces the next satellite pass 2 seconds from script execution
@@ -76,32 +77,9 @@ def removeFiles(directory):
 
 # update an array of weather sats from a TLE file
 def updateTLE(satellites, tleFilePath, tle_url):
-    try:    
-        response = requests.get(tle_url)
-        if(response.status_code==200 and response.content.decode().startswith('NOAA')):
-            with open(tleFilePath, "wb") as f:
-                f.write(response.content)
-                logging.info('Cached new TLE')
-        else:
-            logging.error('Bad Response: Failed to update TLE')
-    except requests.ConnectionError:
-        logging.error('Connection Error: Failed to update TLE')
-        raise
-    try:
-        logging.info('Ingesting TLEs from {}'.format(tleFilePath))
-        tleFile=open(tleFilePath)
-        tleData=tleFile.readlines()
-        tleFile.close()
-        for sat in satellites:
-            tle=[]
-            for i, line in enumerate(tleData):
-                if(sat.identifier in line): 
-                    for l in tleData[i:i+3]:
-                        tle.append(l.strip('\r\n').rstrip())
-            sat.TLE = tle
-    except OSError as e:
-        logging.error('OS Error: ' + e.strerror)
-        raise
+    result = refresh_tles(tleFilePath, [sat.identifier for sat in satellites], tle_url)
+    for sat in satellites:
+        sat.TLE = result.records[sat.identifier]
 
 
 
@@ -412,7 +390,7 @@ if __name__ == "__main__":
         satellites.append(WeatherSatellite(satID, frequency))
 
     updateTLE(satellites, tlePath, tleUrl)
-    tleLastUpdated = datetime.now(timezone.utc).day
+    tleLastUpdated = datetime.now(timezone.utc).date()
 
     # min and max chunk durations for recordings
     minChunkDuration = int(config.get('SDR', 'minChunkDuration'))
@@ -450,9 +428,9 @@ if __name__ == "__main__":
         tryKill('rtl_fm')
 
         # pull TLEs from file once per day
-        if (tleLastUpdated != datetime.now(timezone.utc).day):
-            updateTLE(satellites, tlePath)
-            tleLastUpdated = datetime.now(timezone.utc).day
+        if (tleLastUpdated != datetime.now(timezone.utc).date()):
+            updateTLE(satellites, tlePath, tleUrl)
+            tleLastUpdated = datetime.now(timezone.utc).date()
 
         # sleep for a couple minutes
         time.sleep(90)

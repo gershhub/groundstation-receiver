@@ -2,6 +2,12 @@
 
 ## Test Scripts
 
+### TLE regression tests
+
+Run `python3 -m unittest discover -s test -p 'test_tle.py' -v` from the repository root after installing `requests`. These tests need no radio hardware, prediction libraries or AWS credentials. They check successful downloads, exact satellite matching, corrupt/partial data, HTTP errors and redirects, connection/read timeouts, atomic cache failures, the UTC daily refresh and both utility integrations. Shell integration tests use a local HTTP fixture and temporary directories, including paths with spaces. They make no external requests and do not run `groundstation.py` or `fakePass.py`.
+
+The fixture `fixtures/noaa.txt` contains the three NOAA records retrieved once from CelesTrak's supported name query on 2026-10-11. It is fixed test data, not a runtime cache or a source of historical pass predictions.
+
 ### fakePass
 
 `fakePass.py` uses pre-recorded audio and image chunks to simulate a NOAA satellite flight pass in order to test our AWS-hosted web application server. The application server is not included in this repository. 

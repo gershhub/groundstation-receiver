@@ -10,7 +10,13 @@ Before running, ensure that all dependencies are installed, and that Boto3 is pr
 
 `python3 groundstation.py /path/to/groundstation.cfg`
 
-Updated TLEs can be retrieved using a `updateTLE.sh` or inline in `groundstation.py` (default). Due to firewall limitations in our particular installation, we mirror TLEs on our AWS instance and retrieve from there. 
+Updated TLEs can be retrieved using `updateTLE.sh` or inline in `groundstation.py` (default, once per UTC date). Both use the shared `tle.py` updater, as does `predictFuture.py`. The default source is CelesTrak's [name query with explicit TLE format](https://celestrak.org/NORAD/elements/gp.php?NAME=NOAA&FORMAT=TLE); the former NOAA group is no longer available. The returned list includes other NOAA objects, so the updater matches the configured satellite names exactly and requires complete, checksummed records for all of them before atomically replacing the cache. NOAA 15, 18 and 19 retain the same three-line prediction input and frequencies.
+
+Downloads use connection/read timeouts and make one attempt, without following redirects or retrying HTTP errors, in accordance with [CelesTrak's usage policy](https://celestrak.org/usage-policy.php). On a network, response, validation or write failure, the receiver and prediction utility warn and use the existing cache only if it contains valid records for every requested satellite. Cached orbital data may be outdated; if no usable cache exists, they fail explicitly. The standalone updater exits with status 1 when a refresh fails, even if it preserves a usable cache, so services do not report a failed refresh as successful.
+
+Due to firewall limitations in our particular installation, we mirror TLEs on our AWS instance and retrieve from there. A mirror URL can still be configured as `TLE.tleUrl` in `groundstation.cfg`, or passed to `updateTLE.sh --url URL`. The shell updater defaults to the original data directory; `TLEDIR` and `PYTHON` can override the directory and interpreter.
+
+NOAA 15, 18 and 19 were [decommissioned in 2025](https://www.nesdis.noaa.gov/news/legacy-orbit-noaa-decommissions-the-poes-satellite-constellation). Current orbital elements remain available, but these TLE maintenance fixes do not restore their APT broadcasts. The AWS restoration is being tested with archived recordings; replacing the live feed is separate work.
 
 Pass data are shared with the AWS application server by issuing messages to 2 different SQS queues, given in groundstation.cfg. The preview queue informs the application server of the next pass time, pass metadata, and a unique performanceID. Shortly after pass decoding begins, the performance queue infoms the application server of the files to expect during the recording process. 
 
@@ -61,6 +67,7 @@ Assembled for its Hong Kong deployment at Mplus museum, Ground Station Receiver 
 - twolame: install from repositories
 - boto3: pip install boto3 (pip)
 - configparser: pip install configparser
+- requests: pip install requests (used by the shared TLE updater)
 - [noaa-apt](https://github.com/martinber/noaa-apt): releases are available for various platforms or build from source. only the command line version is needed.
 - [Supervisord](http://supervisord.org/) (optional): install from repositories
 
